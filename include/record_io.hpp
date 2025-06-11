@@ -30,36 +30,30 @@ void write_records_to_file(const std::string& path, const std::vector<Record>& r
 
 // Read records from a binary file block-by-block to avoid memory overload
 std::vector<Record> read_records_from_file(const std::string& path) {
-    std::vector<Record> records;
-
     std::ifstream in(path, std::ios::binary); // Open file in binary read mode
     if (!in) {
         throw std::runtime_error("Failed to open file for reading: " + path);
     }
 
-    char buffer[BLOCK_SIZE]; // Temporary buffer for reading
-    while (in.read(buffer, sizeof(uint64_t) + sizeof(uint32_t))) {
-        // Read key and length
-        uint64_t key = *reinterpret_cast<uint64_t*>(buffer);
-        uint32_t len;
-        in.read(reinterpret_cast<char*>(&len), sizeof(uint32_t));
+    std::vector<Record> records;
+    std::vector<char> buffer(BLOCK_SIZE); // Temporary buffer for reading
 
-        if (in.eof()) break;
+    while (in.read(buffer.data(), sizeof(uint64_t) + sizeof(uint32_t))) {
+        // Read key and length
+        uint64_t key = *reinterpret_cast<uint64_t*>(buffer.data());
+        uint32_t len = *reinterpret_cast<uint32_t*>(buffer.data() + sizeof(uint64_t));
+
+        if (len > PAYLOAD_MAX || len == 0) throw std::runtime_error("Invalid payload length");
 
         // Read payload of variable size
-        char* payload = new char[len];
-        in.read(payload, len);
-
-        if (in.eof()) {
-            delete[] payload;
-            break;
-        }
+        std::vector<char> payload(len);
+        if (!in.read(payload.data(), len)) break;
 
         // Add record to vector
-        records.emplace_back(key, len, payload);
+        records.emplace_back(key, len, payload.data());
 
         // Free memory (payload gets copied inside Record)
-        delete[] payload;
+        // delete[] payload;
     }
 
     in.close();
