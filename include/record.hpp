@@ -1,9 +1,7 @@
-#ifndef RECORD_HPP
-#define RECORD_HPP
-
-#include <string>
-#include <vector>
+#pragma once
 #include <cstdint>
+#include <cstring>
+#include <stdexcept>
 
 constexpr size_t PAYLOAD_MAX = 1024;
 
@@ -17,27 +15,34 @@ struct Record {
     // Because char* gives us more control. std::string adds some overhead and formatting
 
     // Default constructor
-    Record();
+    Record() : key(0), len(0), payload(nullptr) {}
 
     // Constructor with key, length, and payload data
-    Record(uint64_t k, uint32_t l, const char* data);
+    Record(uint64_t k, uint32_t l, const char* p)
+        : key(k), len(l), payload(new char[l]) {
+        std::memcpy(payload, p, l); // Copy the payload content
+    }
 
     // Copy constructor
-    Record(const Record& other);
+    Record(const Record& other)
+        : key(other.key), len(other.len), payload(new char[other.len]) {
+        std::memcpy(payload, other.payload, len);
+    }
 
     // Copy assignment operator
-    Record& operator=(const Record& other);
+    Record& operator=(const Record& other) {
+        if (this != &other) {
+            delete[] payload; // Release old payload
+            key = other.key;
+            len = other.len;
+            payload = new char[len];
+            std::memcpy(payload, other.payload, len);
+        }
+        return *this;
+    }
 
     // Destructor (to avoid memory leaks)
-    ~Record();
+    ~Record() {
+        delete[] payload;
+    }
 };
-
-// We have 2 I/O functions:
-
-// reads the binary file and reconstructs the records
-std::vector<Record> read_records_from_file(const std::string& path, size_t block_size = 4096);
-
-// writes a list of records into a binary file
-void write_records_to_file(const std::string& path, const std::vector<Record>& records);
-
-#endif // RECORD_HPP
