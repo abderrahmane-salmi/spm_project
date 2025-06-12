@@ -1,6 +1,7 @@
 #include "include/record_io.hpp"
 #include "include/sort.hpp"
 #include "chunk_sort.cpp"
+#include "merge_sorted_chunks.cpp"
 #include <random>
 #include <chrono>
 #include <iostream>
@@ -111,6 +112,7 @@ void generateLargeTestFile() {
 // --- Step 3 – External Sort Phase 1: Chunking + Sorting Logic ---
 void step3ChunkAndSort() {
     std::string input_path = "large_test_file.bin";
+    std::string output_path = "sorted_large_test_file.bin";
     std::string temp_dir = "temp_chunks";
 
     std::cout << "Starting external sort...\n";
@@ -123,8 +125,27 @@ void step3ChunkAndSort() {
               << std::chrono::duration_cast<std::chrono::seconds>(end - start).count()
               << " seconds.\n";
 
-    std::cout << "Verifying sorted file...\n";
+    // 2. Count how many chunks were created
+    size_t chunk_count = 0;
+    for (const auto& entry : std::filesystem::directory_iterator(temp_dir)) {
+        if (entry.is_regular_file() && entry.path().extension() == ".bin") {
+            ++chunk_count;
+        }
+    }
+    if (chunk_count == 0) {
+        std::cerr << "No chunks found in " << temp_dir << std::endl;
+        return;
+    }
 
+    // 3. Merge sorted chunks
+    merge_sorted_chunks(temp_dir, output_path, chunk_count);
+
+    // 4. Verify sorted file
+    if (is_sorted_file(output_path)) {
+        std::cout << "Sorted file is valid." << std::endl;
+    } else {
+        std::cerr << "Sorted file is not valid." << std::endl;
+    }
 }
 
 // --- Select Main ---
