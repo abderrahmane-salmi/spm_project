@@ -1,37 +1,12 @@
 #include "include/record_io.hpp"
 #include "include/sort.hpp"
+#include "chunk_sort.cpp"
 #include <random>
 #include <chrono>
 #include <iostream>
 #include <string>
 #include <vector>
 #include <fstream>
-
-// --- Helper Functions ---
-std::string random_payload(uint32_t len) {
-    std::string result;
-    result.reserve(len);
-    static const char charset[] =
-        "0123456789"
-        "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
-        "abcdefghijklmnopqrstuvwxyz";
-
-    static thread_local std::mt19937 rg(std::random_device{}());
-    static thread_local std::uniform_int_distribution<> pick(0, sizeof(charset) - 2);
-
-    for (uint32_t i = 0; i < len; ++i) {
-        result += charset[pick(rg)];
-    }
-
-    return result;
-}
-
-bool is_sorted(const std::vector<Record>& records) {
-    for (size_t i = 1; i < records.size(); ++i) {
-        if (records[i-1].key > records[i].key) return false;
-    }
-    return true;
-}
 
 // --- Step 2 Logic ---
 void step2SequentialMergeSort() {
@@ -64,8 +39,44 @@ void step2SequentialMergeSort() {
     }
 }
 
-// --- Step 3 – External Sort Phase 1: Chunking + Sorting Logic ---
-void step3Chunking() {
+// --- Generate Large Test File ---
+std::string random_payload(uint32_t len) {
+    std::string result;
+    result.reserve(len);
+    static const char charset[] =
+        "0123456789"
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+        "abcdefghijklmnopqrstuvwxyz";
+
+    static thread_local std::mt19937 rg(std::random_device{}());
+    static thread_local std::uniform_int_distribution<> pick(0, sizeof(charset) - 2);
+
+    for (uint32_t i = 0; i < len; ++i) {
+        result += charset[pick(rg)];
+    }
+
+    return result;
+}
+
+bool is_sorted(const std::vector<Record>& records) {
+    for (size_t i = 1; i < records.size(); ++i) {
+        if (records[i-1].key > records[i].key) return false;
+    }
+    return true;
+}
+
+bool is_sorted_file(const std::string& path) {
+    std::vector<Record> records = read_records_from_file(path);
+    for (size_t i = 1; i < records.size(); ++i) {
+        if (records[i - 1].key > records[i].key) {
+            std::cerr << "Error: Not sorted at index " << i << std::endl;
+            return false;
+        }
+    }
+    return true;
+}
+
+void generateLargeTestFile() {
     std::string filename = "large_test_file.bin";
     // size_t num_records = 10'000'000; // ~4.92GB
     size_t num_records = 500'000; // ~252MB
@@ -97,6 +108,25 @@ void step3Chunking() {
     std::cout << "Generated " << num_records << " records in file: " << filename << std::endl;
 }
 
+// --- Step 3 – External Sort Phase 1: Chunking + Sorting Logic ---
+void step3ChunkAndSort() {
+    std::string input_path = "large_test_file.bin";
+    std::string temp_dir = "temp_chunks";
+
+    std::cout << "Starting external sort...\n";
+    auto start = std::chrono::steady_clock::now();
+
+    chunk_and_sort_file(input_path, temp_dir);
+
+    auto end = std::chrono::steady_clock::now();
+    std::cout << "External sort completed in "
+              << std::chrono::duration_cast<std::chrono::seconds>(end - start).count()
+              << " seconds.\n";
+
+    std::cout << "Verifying sorted file...\n";
+
+}
+
 // --- Select Main ---
 int main() {
     int step = 3;
@@ -104,7 +134,8 @@ int main() {
     if (step == 2) {
         step2SequentialMergeSort();
     } else if (step == 3) {
-        step3Chunking();
+        // generateLargeTestFile();
+        step3ChunkAndSort();
     } else {
         std::cerr << "Invalid step number: " << step << std::endl;
         return 1;
