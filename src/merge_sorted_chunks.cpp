@@ -1,97 +1,68 @@
-#include <queue>
-#include <fstream>
-#include <vector>
-#include <string>
-#include <iostream>
-#include "include/record.hpp"
 #include "include/record_io.hpp"
+#include <filesystem>
+#include <fstream>
+#include <iostream>
+#include <vector>
+#include <queue>
+#include <string>
+#include "include/record.hpp"
 
-// Struct to hold current record and the input stream from chunk file
 struct ChunkRecord {
-    Record record;
-    size_t chunk_index;
-
+    Record rec;
+    size_t idx;
     bool operator>(const ChunkRecord& other) const {
-        return record.key > other.record.key; // min-heap by key
+        return rec.key > other.rec.key;
     }
 };
 
-void merge_sorted_chunks(const std::string& temp_dir, const std::string& output_path, size_t total_chunks) {
-    std::cout << "Merging sorted chunks...\n";
-    
-    // Open all chunk files for reading
-    std::cout << "Opening chunk files...\n";
-    std::vector<std::ifstream> chunk_streams(total_chunks);
-    for (size_t i = 0; i < total_chunks; ++i) {
-        std::string chunk_file = temp_dir + "/chunk_" + std::to_string(i) + ".bin";
-        chunk_streams[i].open(chunk_file, std::ios::binary);
-        if (!chunk_streams[i]) {
-            std::cerr << "Failed to open chunk file: " << chunk_file << std::endl;
-            return;
-        }
+void merge_sorted_chunks(const std::string& temp_dir,
+                         const std::string& output_file,
+                         size_t chunk_count) {
+    std::vector<std::ifstream> streams(chunk_count);
+    for (size_t i = 0; i < chunk_count; ++i) {
+        streams[i].open(temp_dir + "/chunk_" + std::to_string(i) + ".bin",
+                        std::ios::binary);
     }
 
-    // Read first record from each chunk to initialize heap
-    std::priority_queue<ChunkRecord, std::vector<ChunkRecord>, std::greater<>> min_heap;
+    std::priority_queue<ChunkRecord, std::vector<ChunkRecord>, std::greater<>> pq;
 
-    for (size_t i = 0; i < total_chunks; ++i) {
+    // Initialize heap
+    for (size_t i = 0; i < chunk_count; ++i) {
         uint64_t key;
         uint32_t len;
-
-        // Read key and len
-        chunk_streams[i].read(reinterpret_cast<char*>(&key), sizeof(key));
-        chunk_streams[i].read(reinterpret_cast<char*>(&len), sizeof(len));
-        if (!chunk_streams[i] || len == 0 || len > PAYLOAD_MAX) continue;
-
+        if (!(streams[i].read(reinterpret_cast<char*>(&key), sizeof(key)))) continue;
+        streams[i].read(reinterpret_cast<char*>(&len), sizeof(len));
+        if (len == 0 || len > PAYLOAD_MAX) continue;
         char* payload = new char[len];
-        chunk_streams[i].read(payload, len);
-        if (!chunk_streams[i]) {
-            delete[] payload;
-            continue;
-        }
-
-        min_heap.push(ChunkRecord{Record(key, len, payload), i});
-        delete[] payload; // Record copies payload
+        streams[i].read(payload, len);
+        pq.push({Record(key, len, payload), i});
+        delete[] payload;
     }
 
-    std::ofstream out(output_path, std::ios::binary);
-    if (!out) {
-        std::cerr << "Failed to open output file: " << output_path << std::endl;
-        return;
-    }
+    std::ofstream out(output_file, std::ios::binary);
 
-    while (!min_heap.empty()) {
-        auto top = min_heap.top();
-        min_heap.pop();
+    while (!pq.empty()) {
+        auto top = pq.top(); pq.pop();
+        const Record& r = top.rec;
+        out.write(reinterpret_cast<const char*>(&r.key), sizeof(r.key));
+        out.write(reinterpret_cast<const char*>(&r.len), sizeof(r.len));
+        out.write(r.payload, r.len);
 
-        // Write the smallest record to output file
-        const Record& rec = top.record;
-        out.write(reinterpret_cast<const char*>(&rec.key), sizeof(rec.key));
-        out.write(reinterpret_cast<const char*>(&rec.len), sizeof(rec.len));
-        out.write(rec.payload, rec.len);
-
-        // Read next record from the chunk that this record came from
-        size_t idx = top.chunk_index;
-
-        uint64_t key;
-        uint32_t len;
-        if (chunk_streams[idx].read(reinterpret_cast<char*>(&key), sizeof(key)) &&
-            chunk_streams[idx].read(reinterpret_cast<char*>(&len), sizeof(len)) &&
-            len > 0 && len <= PAYLOAD_MAX) {
-
-            char* payload = new char[len];
-            if (chunk_streams[idx].read(payload, len)) {
-                min_heap.push(ChunkRecord{Record(key, len, payload), idx});
+        size_t i = top.idx;
+        uint64_t key; uint32_t len;
+        if (streams[i].read(reinterpret_cast<char*>(&key), sizeof(key))) {
+            streams[i].read(reinterpret_cast<char*>(&len), sizeof(len));
+            if (len > 0 && len <= PAYLOAD_MAX) {
+                char* payload = new char[len];
+                streams[i].read(payload, len);
+                pq.push({Record(key, len, payload), i});
+                delete[] payload;
             }
-            delete[] payload;
         }
     }
 
-    // Close all chunk files and output
-    for (auto& stream : chunk_streams) {
-        stream.close();
-    }
+    for (auto& s : streams) s.close();
     out.close();
 
-    std::cout << "Merged " << total_chunks << " chunks into " << output_path << std::endl;
+    std::cout << "Merged " << chunk_count << " chunks into " << output_file << std::endl;
 }
