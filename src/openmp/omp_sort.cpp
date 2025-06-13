@@ -85,7 +85,7 @@ int main(int argc, char* argv[]) {
     auto start_time = std::chrono::high_resolution_clock::now();
 
     // Create temp directory for chunks
-    fs::path temp_dir = "tmp_chunks";
+    fs::path temp_dir = "temp_chunks_omp";
     if (!fs::exists(temp_dir)) {
         fs::create_directory(temp_dir);
     }
