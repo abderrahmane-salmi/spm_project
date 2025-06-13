@@ -1,5 +1,7 @@
 // Description: OpenMP version of external sorting using binary files
-// Compile with: g++ -fopenmp -O2 -o omp_sort src/shared_mem/omp_sort.cpp
+// Compile with:
+// g++ -std=c++17 openmp/omp_sort.cpp -o omp_sort
+// ./omp_sort data/input200m.bin 10000000 data/output200m_omp.bin
 
 #include <iostream>
 #include <fstream>
