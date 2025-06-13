@@ -155,8 +155,8 @@ int main() {
     if (step == 2) {
         step2SequentialMergeSort();
     } else if (step == 3) {
-        // generateLargeTestFile();
-        step3ChunkAndSort();
+        generateLargeTestFile();
+        // step3ChunkAndSort();
     } else {
         std::cerr << "Invalid step number: " << step << std::endl;
         return 1;
