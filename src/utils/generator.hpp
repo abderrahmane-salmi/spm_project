@@ -1,7 +1,7 @@
 #pragma once
 
-#include "record.hpp"
-#include "record_io.hpp"
+#include "../include/record.hpp"
+#include "../include/record_io.hpp"
 
 #include <random>
 #include <chrono>

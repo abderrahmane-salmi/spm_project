@@ -1,6 +1,5 @@
-#include "include/chunk_sort.hpp"
-#include "include/record_io.hpp"
-#include "include/sort.hpp"
+#include "../include/record_io.hpp"
+#include "../include/sort.hpp"
 
 #include <filesystem>  // C++17: to create directories
 #include <fstream>
@@ -8,10 +7,10 @@
 #include <vector>
 #include <string>
 
-constexpr size_t CHUNK_SIZE = 10 * 1024 * 1024; // 10 MB chunks
+constexpr size_t DEFAULT_CHUNK_SIZE = 10 * 1024 * 1024; // 10 MB
 
 // Reads the large input file in small chunks, sorts them, and writes sorted chunks to temp_dir
-void chunk_and_sort_file(const std::string& input_path, const std::string& temp_dir) {
+void chunk_and_sort_file(const std::string& input_path, const std::string& temp_dir, size_t chunk_size = DEFAULT_CHUNK_SIZE) {
     std::ifstream infile(input_path, std::ios::binary);
     if (!infile) {
         std::cerr << "Error: failed to open input file: " << input_path << std::endl;
@@ -28,8 +27,8 @@ void chunk_and_sort_file(const std::string& input_path, const std::string& temp_
         std::vector<Record> records;
         size_t chunk_bytes = 0;
 
-        // Read records into this chunk until we hit CHUNK_SIZE
-        while (chunk_bytes < CHUNK_SIZE && infile.peek() != EOF) {
+        // Read records into this chunk until we hit chunk_size
+        while (chunk_bytes < chunk_size && infile.peek() != EOF) {
             uint64_t key;
             uint32_t len;
 

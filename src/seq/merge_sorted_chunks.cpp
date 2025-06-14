@@ -1,11 +1,11 @@
-#include "include/record_io.hpp"
+#include "../include/record_io.hpp"
+#include "../include/record.hpp"
 #include <filesystem>
 #include <fstream>
 #include <iostream>
 #include <vector>
 #include <queue>
 #include <string>
-#include "include/record.hpp"
 
 struct ChunkRecord {
     Record rec;

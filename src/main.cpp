@@ -1,7 +1,7 @@
 #include "include/record_io.hpp"
 #include "include/sort.hpp"
-#include "chunk_sort.cpp"
-#include "merge_sorted_chunks.cpp"
+#include "seq/chunk_sort.cpp"
+#include "seq/merge_sorted_chunks.cpp"
 #include "utils/generator.hpp"
 #include <random>
 #include <chrono>
@@ -42,7 +42,7 @@ void step2SequentialMergeSort() {
 }
 
 // --- Generate Large Test File ---
-std::string random_payload(uint32_t len) {
+std::string random_payload_fun(uint32_t len) {
     std::string result;
     result.reserve(len);
     static const char charset[] =
@@ -98,7 +98,7 @@ void generateLargeTestFile() {
     for (size_t i = 0; i < num_records; ++i) {
         uint64_t key = key_dist(rng);
         uint32_t len = len_dist(rng);
-        std::string payload = random_payload(len);
+        std::string payload = random_payload_fun(len);
         Record rec(key, len, payload.c_str());
 
         out.write(reinterpret_cast<const char*>(&rec.key), sizeof(uint64_t));
