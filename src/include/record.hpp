@@ -45,4 +45,32 @@ struct Record {
     ~Record() {
         delete[] payload;
     }
+
+    // Read record from binary input stream
+    bool read_from_stream(std::istream& in) {
+        if (!in.read(reinterpret_cast<char*>(&key), sizeof(key))) return false;
+        if (!in.read(reinterpret_cast<char*>(&len), sizeof(len))) return false;
+
+        // Sanity check
+        if (len < 8 || len > PAYLOAD_MAX) {
+            in.setstate(std::ios::failbit);
+            return false;
+        }
+
+        delete[] payload;
+        payload = new char[len];
+        return static_cast<bool>(in.read(payload, len));
+    }
+
+    // Write record to binary output stream
+    bool write_to_stream(std::ostream& out) const {
+        if (!out.write(reinterpret_cast<const char*>(&key), sizeof(key))) return false;
+        if (!out.write(reinterpret_cast<const char*>(&len), sizeof(len))) return false;
+        return out.write(payload, len).good();
+    }
+
+    // Return total size of record (key + len + payload)
+    size_t total_size() const {
+        return sizeof(key) + sizeof(len) + len;
+    }
 };
