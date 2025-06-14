@@ -2,6 +2,7 @@
 #include "include/sort.hpp"
 #include "chunk_sort.cpp"
 #include "merge_sorted_chunks.cpp"
+#include "utils/generator.hpp"
 #include <random>
 #include <chrono>
 #include <iostream>
@@ -161,6 +162,18 @@ int main() {
         std::cerr << "Invalid step number: " << step << std::endl;
         return 1;
     }
+
+    /* 
+    // Files generation
+    // Small file: fits in memory
+    generate_test_file("small_test.bin", 1000, PayloadMode::FIXED_LEN, 64);
+
+    // Medium file: varies payloads
+    generate_test_file("medium_test.bin", 500'000, PayloadMode::RANDOM_LEN);
+
+    // Large file: simulates stress test with max payloads
+    generate_test_file("large_test.bin", 2'000'000, PayloadMode::MAX_LEN);
+    */
 
     return 0;
 }
