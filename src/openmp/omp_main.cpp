@@ -22,14 +22,13 @@ struct FileGenerator {
         for (size_t i = 0; i < num_records; ++i) {
             uint64_t key = rand(); // random key
             uint32_t len = 100;
-            char* data = new char[len];
+            std::vector<char> data(len);
             for (uint32_t j = 0; j < len; ++j) {
                 data[j] = 'A' + (rand() % 26);
             }
 
-            Record rec(key, len, data);
+            Record rec(key, data);
             rec.write_to_stream(file);
-            delete[] data;
         }
     }
 
@@ -44,15 +43,14 @@ struct FileGenerator {
         while (written < target_size_bytes) {
             uint64_t key = rand();
             uint32_t len = 100;
-            char* data = new char[len];
+            std::vector<char> data(len);
             for (uint32_t j = 0; j < len; ++j) {
                 data[j] = 'A' + (rand() % 26);
             }
 
-            Record rec(key, len, data);
+            Record rec(key, data);
             rec.write_to_stream(file);
             written += rec.total_size();
-            delete[] data;
         }
     }
 };
@@ -75,14 +73,11 @@ bool verify_sorted_output(const std::string& filename) {
                       << prev.key << " > " << curr.key << std::endl;
             return false;
         }
-        if (prev.payload) delete[] prev.payload;
-        prev = curr;
-        curr.payload = nullptr; // prevent double free
+        prev = curr; // vector copy assignment
         first = false;
         ++count;
     }
 
-    if (prev.payload) delete[] prev.payload;
     std::cout << "Verification PASSED! Total records: " << count << std::endl;
     return true;
 }
@@ -108,15 +103,11 @@ bool compare_files(const std::string& file1, const std::string& file2) {
         if (!b1 && !b2) break;
 
         if (r1.key != r2.key || r1.len != r2.len ||
-            std::memcmp(r1.payload, r2.payload, r1.len) != 0) {
+            r1.payload != r2.payload) {  // vector equality check
             std::cerr << "Mismatch at record " << index << std::endl;
-            if (r1.payload) delete[] r1.payload;
-            if (r2.payload) delete[] r2.payload;
             return false;
         }
 
-        if (r1.payload) delete[] r1.payload;
-        if (r2.payload) delete[] r2.payload;
         ++index;
     }
 

@@ -21,8 +21,8 @@ void write_records_to_file(const std::string& path, const std::vector<Record>& r
         // Write length of payload
         out.write(reinterpret_cast<const char*>(&rec.len), sizeof(uint32_t));
 
-        // Write payload bytes
-        out.write(rec.payload, rec.len);
+        // Write payload bytes using .data()
+        out.write(rec.payload.data(), rec.len);
     }
 
     out.close();
@@ -36,9 +36,9 @@ std::vector<Record> read_records_from_file(const std::string& path) {
     }
 
     std::vector<Record> records;
-    std::vector<char> buffer(BLOCK_SIZE); // Temporary buffer for reading
+    std::vector<char> buffer(sizeof(uint64_t) + sizeof(uint32_t)); // buffer for key+len
 
-    while (in.read(buffer.data(), sizeof(uint64_t) + sizeof(uint32_t))) {
+    while (in.read(buffer.data(), buffer.size())) {
         // Read key and length
         uint64_t key = *reinterpret_cast<uint64_t*>(buffer.data());
         uint32_t len = *reinterpret_cast<uint32_t*>(buffer.data() + sizeof(uint64_t));
@@ -49,11 +49,8 @@ std::vector<Record> read_records_from_file(const std::string& path) {
         std::vector<char> payload(len);
         if (!in.read(payload.data(), len)) break;
 
-        // Add record to vector
+        // Add record to vector using payload.data()
         records.emplace_back(key, len, payload.data());
-
-        // Free memory (payload gets copied inside Record)
-        // delete[] payload;
     }
 
     in.close();
