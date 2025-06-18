@@ -9,170 +9,30 @@
 
 #include "../include/record.hpp"
 #include "omp.hpp"
+#include "../filegen/filegen.hpp"
 
-// === Helper struct to generate binary test files with records ===
-struct FileGenerator {
-    /**
-     * Generate a file with a specific number of records
-     *
-     * Writes a binary file with @p num_records random records, each with a random
-     * 64-bit key, a fixed length of 100 bytes and a payload consisting of random
-     * characters in the range 'A' to 'Z'.
-     *
-     * @param filename The file to generate
-     * @param num_records The number of records to generate
-     */
-    void generateFile(const std::string& filename, size_t num_records) {
-        std::ofstream file(filename, std::ios::binary);
-        if (!file) {
-            std::cerr << "Failed to create file: " << filename << std::endl;
-            return;
-        }
+void print_usage(const std::string& prog_name) {
+    std::cout << "\n========================================\n";
+    std::cout << " OpenMP External MergeSort - CLI Usage\n";
+    std::cout << "========================================\n\n";
+    std::cout << "Usage:\n";
+    std::cout << "  " << prog_name << " sort [input_file] [memory_multiplier] [num_threads]\n";
+    std::cout << "  " << prog_name << " performance [input_file]\n";
+    std::cout << "  " << prog_name << " memory [input_file]\n\n";
 
-        for (size_t i = 0; i < num_records; ++i) {
-            uint64_t key = rand(); // Random key for sorting
-            uint32_t len = 100; // Fixed payload size
-            std::vector<char> data(len);
-            
-            // Fill payload with random letters A-Z
-            for (uint32_t j = 0; j < len; ++j) {
-                data[j] = 'A' + (rand() % 26);
-            }
+    std::cout << "Commands:\n";
+    std::cout << "  sort             Run a configurable sort\n";
+    std::cout << "                   - memory_multiplier: multiplier of 1024 * 1024 (e.g., 256 = 256MB)\n";
+    std::cout << "                   - num_threads: number of OpenMP threads (optional)\n\n";
 
-            Record rec(key, data); // Create a record
-            rec.write_to_stream(file); // Write to file
-        }
-    }
+    std::cout << "  performance      Run sorting with various thread counts (1, 2, 4, 8, 16)\n";
+    std::cout << "  memory           Run sorting with various memory budgets (64MB - 1GB)\n\n";
 
-    /**
-     * Generate a file with records until it reaches a certain byte size
-     *
-     * This function creates a binary file containing random records 
-     * until the total file size reaches approximately @p target_size_bytes. Each record 
-     * consists of a random 64-bit key and a fixed-length payload of 100 bytes filled 
-     * with random uppercase letters from 'A' to 'Z'.
-     *
-     * @param filename The name of the file to be generated
-     * @param target_size_bytes The approximate target size of the generated file in bytes
-     */
-
-    void generateFileBySize(const std::string& filename, size_t target_size_bytes) {
-        // Open the file in binary mode for writing
-        std::ofstream file(filename, std::ios::binary);
-        if (!file) {
-            std::cerr << "Failed to create file: " << filename << std::endl;
-            return;
-        }
-
-        // Initialize a counter to track the total size written to the file
-        size_t written = 0;
-
-        // Continue writing records to the file until the target size is reached
-        while (written < target_size_bytes) {
-            uint64_t key = rand();
-            uint32_t len = 100;
-            std::vector<char> data(len);
-            
-            // Fill the payload with random uppercase letters
-            for (uint32_t j = 0; j < len; ++j) {
-                data[j] = 'A' + (rand() % 26);
-            }
-
-            Record rec(key, data);
-            rec.write_to_stream(file);
-            written += rec.total_size(); // Update the total size written counter
-        }
-    }
-};
-
-
-/**
- * Validate that output file is sorted correctly
- *
- * Reads the file from start to finish and checks that each record's key is
- * less than or equal to the previous record's key. If the check fails, output
- * an error message and return false. If the check passes, output a success
- * message and return true.
- */
-bool verify_sorted_output(const std::string& filename) {
-    // open the file in binary mode
-    std::ifstream file(filename, std::ios::binary);
-    if (!file) {
-        std::cerr << "Failed to open file: " << filename << std::endl;
-        return false;
-    }
-
-    
-    Record prev, curr; // Previous and current records
-    bool first = true; // Flag to track if this is the first record
-    size_t count = 0; // Counter for the number of records
-
-    // Read records from the file until the end is reached
-    while (curr.read_from_stream(file)) {
-        // If this is not the first record and the previous record's key is greater than the current record's key, output an error message and return false
-        if (!first && prev.key > curr.key) {
-            std::cerr << "Sort verification failed at record " << count << ": "
-                      << prev.key << " > " << curr.key << std::endl;
-            return false;
-        }
-
-        // Update the previous record
-        prev = curr;
-        first = false; // This is no longer the first record
-        ++count;
-    }
-
-    // all records were read successfully
-    std::cout << "Verification PASSED! Total records: " << count << std::endl;
-    return true;
-}
-
-
-/**
- * Compare two binary files to check if they are identical
- *
- * This function reads records from two binary files and compares them
- * record by record. Each record's key, length, and payload are compared
- * for equality. The function returns false if the files differ in size
- * or content, and true if they are identical. If the files differ, an
- * error message indicating the index of the mismatched record is output.
- */
-
-bool compare_files(const std::string& file1, const std::string& file2) {
-    // Open the two files in binary mode
-    std::ifstream f1(file1, std::ios::binary);
-    std::ifstream f2(file2, std::ios::binary);
-
-    if (!f1 || !f2) {
-        std::cerr << "Failed to open one of the files." << std::endl;
-        return false;
-    }
-
-    // Initialize Record objects to hold data from each file
-    Record r1, r2;
-    size_t index = 0; // Keep track of the current record index
-
-    // Loop indefinitely until we reach the end of one of the files
-    while (true) {
-        // Read a record from each file
-        bool b1 = r1.read_from_stream(f1);
-        bool b2 = r2.read_from_stream(f2);
-
-        if (b1 != b2) return false; // If the read operations didn't both succeed, return false
-        if (!b1 && !b2) break; // If we reached the end of both files, exit the loop
-
-        // Compare the records, check if key, length, and payload match
-        if (r1.key != r2.key || r1.len != r2.len || r1.payload != r2.payload) {
-            std::cerr << "Mismatch at record " << index << std::endl;
-            return false;
-        }
-
-        ++index; // Increment the record index
-    }
-
-    // If we made it through the entire loop without returning, the files match
-    std::cout << "File comparison PASSED! Records compared: " << index << std::endl;
-    return true;
+    std::cout << "Examples:\n";
+    std::cout << "  " << prog_name << " sort myfile.bin            # uses default 256MB & 4 threads\n";
+    std::cout << "  " << prog_name << " sort myfile.bin 512 8      # 512MB, 8 threads\n";
+    std::cout << "  " << prog_name << " performance myfile.bin     # run performance test\n";
+    std::cout << "  " << prog_name << " memory myfile.bin          # run memory budget test\n\n";
 }
 
 /**
@@ -265,140 +125,75 @@ void memory_budget_test(const std::string& input_file) {
 }
 
 int main(int argc, char* argv[]) {
-    std::cout << "=== OpenMP External MergeSort Tester ===" << std::endl;
+    print_usage(argv[0]);
 
     // Check command-line arguments
     if (argc < 2) {
-        std::cout << "Usage: " << argv[0] << " <test_type> [input_file]" << std::endl;
-        std::cout << "Test types: generate, basic, performance, memory, large" << std::endl;
+        std::cout << "Error usage command" << std::endl;
         return 1;
     }
 
-    // Determine test type
-    std::string test = argv[1];
-    FileGenerator gen;
+    std::string command = argv[1];
+    std::string input_file = (argc >= 3) ? argv[2] : "medium_test_omp.bin";
 
-    // Generate test files
-    if (test == "generate") {
-        gen.generateFile("small_test_omp.bin", 1000);
-        std::cout << "Generated small_test_omp.bin" << std::endl;
-
-        gen.generateFile("medium_test_omp.bin", 100000);
-        std::cout << "Generated medium_test_omp.bin" << std::endl;
-
-        gen.generateFileBySize("large_test_omp.bin", 500 * 1024 * 1024);
-        std::cout << "Generated large_test_omp.bin (~500MB)" << std::endl;
-        return 0;
-    }
-
-    // Set input file
-    std::string input_file = argc >= 3 ? argv[2] : "medium_test_omp.bin";
     if (!std::filesystem::exists(input_file)) {
-        std::cerr << "Input file not found. Use 'generate' to create one." << std::endl;
+        std::cerr << "Error: Input file not found: " << input_file << "\n";
         return 1;
     }
 
-    // Perform test
-    if (test == "basic") {
-        OpenMPExternalMergeSort sorter(256 * 1024 * 1024, 4);
-        std::string output_file = "output_basic_omp.bin";
+    if (command == "sort") {
+        // Parse command-line arguments (if they exist)
+        size_t memory_mb = (argc >= 4) ? std::stoul(argv[3]) : 256;
+        size_t memory_bytes = memory_mb * 1024 * 1024;
+        int threads = (argc >= 5) ? std::stoi(argv[4]) : 4;
+
+        // Generate output file name based on input - ex: data.bin -> data_omp_output.bin
+        std::filesystem::path input_path(input_file);
+        std::string output_file = input_path.stem().string() + "_omp_output" + input_path.extension().string();
+
+        OpenMPExternalMergeSort sorter(memory_bytes, threads);
 
         auto start = std::chrono::high_resolution_clock::now();
         bool success = sorter.sort_file(input_file, output_file);
         auto end = std::chrono::high_resolution_clock::now();
+
         double duration = std::chrono::duration<double>(end - start).count();
+        std::cout << "Sort completed in " << duration << " seconds\n";
 
         if (success) {
-            std::cout << "Sort complete in " << duration << " seconds" << std::endl;
             verify_sorted_output(output_file);
         } else {
-            std::cout << "Sort failed!" << std::endl;
+            std::cerr << "Sort failed.\n";
         }
 
-        if (std::filesystem::exists(output_file)) std::filesystem::remove(output_file);
-
-    } else if (test == "performance") {
+        // this line deletes the output file, use it only when needed
+        // if (std::filesystem::exists(output_file)) std::filesystem::remove(output_file);
+    }
+    else if (command == "performance") {
         performance_test(input_file);
-
-    } else if (test == "memory") {
+    }
+    else if (command == "memory") {
         memory_budget_test(input_file);
-
-    } else if (test == "large") {
-        OpenMPExternalMergeSort sorter(512 * 1024 * 1024, 8);
-        std::string output_file = "output_large_omp.bin";
-
-        auto start = std::chrono::high_resolution_clock::now();
-        bool success = sorter.sort_file(input_file, output_file);
-        auto end = std::chrono::high_resolution_clock::now();
-        double duration = std::chrono::duration<double>(end - start).count();
-
-        if (success) {
-            std::cout << "Large file sorted in " << duration << " seconds" << std::endl;
-            verify_sorted_output(output_file);
-        } else {
-            std::cout << "Large file sort failed." << std::endl;
-        }
-
-        if (std::filesystem::exists(output_file)) std::filesystem::remove(output_file);
-
-    } else {
-        std::cerr << "Unknown test type: " << test << std::endl;
+    }
+    else {
+        std::cerr << "Unknown command: " << command << "\n";
         return 1;
     }
 
     return 0;
 }
 
-/*
-==================================================
- OpenMP External MergeSort Tester - Command Guide
-==================================================
+/* ## Example Commands ##
 
-Usage:
-    ./omp_main <test_type> [input_file]
+# Default sort (256MB, 4 threads)
+./omp_main sort input.bin
 
-Test Types:
---------------------------------------------
-1. generate
-   - Creates test input files:
-     - small_test_omp.bin    (1,000 records)
-     - medium_test_omp.bin   (100,000 records)
-     - large_test_omp.bin    (~500MB in size)
+# Custom memory (512MB) and threads (8)
+./omp_main sort input.bin 512 8
 
-   Example:
-     ./omp_main generate
+# Performance test (1–16 threads)
+./omp_main performance input.bin
 
-2. basic
-   - Performs a basic sort using:
-     - 256 MB memory
-     - 4 threads
-
-   Example:
-     ./omp_main basic medium_test_omp.bin
-
-3. performance
-   - Runs sorting with varying thread counts:
-     - 1, 2, 4, 8, 16 (up to your CPU’s max)
-
-   Example:
-     ./omp_main performance medium_test_omp.bin
-
-4. memory
-   - Runs sorting with different memory budgets:
-     - 64MB, 128MB, 256MB, 512MB, 1024MB
-
-   Example:
-     ./omp_main memory medium_test_omp.bin
-
-5. large
-   - Sorts a large file (~500MB) using:
-     - 512 MB memory
-     - 8 threads
-
-   Example:
-     ./omp_main large large_test_omp.bin
-
-Note:
-- If [input_file] is not provided, defaults to: medium_test_omp.bin
-- Use 'generate' first if test files don't exist.
+# Memory test (64MB to 1GB)
+./omp_main memory input.bin
 */

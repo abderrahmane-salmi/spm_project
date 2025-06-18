@@ -3,77 +3,85 @@
 CXX = g++
 CXXFLAGS = -std=c++17 -O3 -Wall -Wextra
 
-# FastFlow installation path (adjust as needed)
+# FastFlow installation path
 FF_PATH = ./fastflow
 FF_INCLUDES = -I$(FF_PATH)
 
 # OpenMP flags
 OMP_FLAGS = -fopenmp
 
-# Source directories
+# Directories
 SRC_DIR = src
-INCLUDE_DIR = src/include
+INCLUDE_DIR = $(SRC_DIR)/include
 OMP_DIR = $(SRC_DIR)/openmp
 FF_DIR = $(SRC_DIR)/fastflow
+FILEGEN_DIR = $(SRC_DIR)/filegen
 
 # Output binaries
 OMP_BIN = omp_mergesort
 FF_BIN = ff_mergesort
+FILEGEN_BIN = filegen
 
-# Common includes
+# Includes
 INCLUDES = -I$(INCLUDE_DIR)
 
-.PHONY: all clean openmp fastflow test
+.PHONY: all clean openmp fastflow filegen test quick-test perf-test
 
-all: openmp fastflow
+all: openmp fastflow filegen
 
-# OpenMP version
+# Build OpenMP binary
 openmp: $(OMP_BIN)
 
-$(OMP_BIN): $(OMP_DIR)/omp_main.cpp $(INCLUDE_DIR)/record.hpp $(OMP_DIR)/omp.hpp
-	$(CXX) $(CXXFLAGS) $(OMP_FLAGS) $(INCLUDES) -o $@ $(OMP_DIR)/omp_main.cpp
+$(OMP_BIN): $(OMP_DIR)/omp_main.cpp $(INCLUDE_DIR)/record.hpp $(OMP_DIR)/omp.hpp src/filegen/filegen.cpp
+	$(CXX) $(CXXFLAGS) $(OMP_FLAGS) $(INCLUDES) -o $@ $(OMP_DIR)/omp_main.cpp src/filegen/filegen.cpp
 
-# FastFlow version
+# Build FastFlow binary
 fastflow: $(FF_BIN)
 
-$(FF_BIN): $(FF_DIR)/ff_main.cpp $(INCLUDE_DIR)/record.hpp $(FF_DIR)/ff.hpp
-	$(CXX) $(CXXFLAGS) $(FF_INCLUDES) $(INCLUDES) -o $@ $(FF_DIR)/ff_main.cpp -pthread
+$(FF_BIN): $(FF_DIR)/ff_main.cpp $(INCLUDE_DIR)/record.hpp $(FF_DIR)/ff.hpp src/filegen/filegen.cpp
+	$(CXX) $(CXXFLAGS) $(FF_INCLUDES) $(INCLUDES) -o $@ $(FF_DIR)/ff_main.cpp src/filegen/filegen.cpp -pthread
 
-# Test both versions
-test: openmp fastflow
-	@echo "=== Testing OpenMP version ==="
-	./$(OMP_BIN) generate
-	./$(OMP_BIN) basic small_omp.bin
-	@echo ""
-	@echo "=== Testing FastFlow version ==="
-	./$(FF_BIN) generate
-	./$(FF_BIN) basic small_ff.bin
-	@echo ""
-	@echo "=== Comparing outputs ==="
-	./$(OMP_BIN) compare output_omp_basic.bin output_ff_basic.bin
+# Build filegen CLI tool
+filegen: $(FILEGEN_BIN)
 
-# Quick correctness test
-quick-test: openmp fastflow
+$(FILEGEN_BIN): $(FILEGEN_DIR)/filegen_main.cpp $(FILEGEN_DIR)/filegen.cpp $(FILEGEN_DIR)/filegen.hpp
+	$(CXX) $(CXXFLAGS) $(INCLUDES) -o $@ $(FILEGEN_DIR)/filegen_main.cpp $(FILEGEN_DIR)/filegen.cpp
+
+# Test both implementations
+test: openmp fastflow filegen
+	@echo "=== Generating input files ==="
+	./$(FILEGEN_BIN) gen_count small.bin 1000
+
+	@echo "=== OpenMP Sort ==="
+	./$(OMP_BIN) sort small.bin
+
+	@echo "=== FastFlow Sort ==="
+	./$(FF_BIN) sort small.bin
+
+	@echo "=== Compare Results ==="
+	./$(FILEGEN_BIN) compare small_omp_output.bin small_ff_output.bin
+
+# Quick correctness check
+quick-test: openmp fastflow filegen
 	@echo "=== Quick Correctness Test ==="
-	./$(OMP_BIN) generate
-	./$(OMP_BIN) basic small_omp.bin
-	./$(FF_BIN) basic small_omp.bin
-	./$(OMP_BIN) verify output_omp_basic.bin
-	./$(FF_BIN) verify output_ff_basic.bin
-	./$(OMP_BIN) compare output_omp_basic.bin output_ff_basic.bin
+	./$(FILEGEN_BIN) gen_count quick.bin 1000
+	./$(OMP_BIN) sort quick.bin
+	./$(FF_BIN) sort quick.bin
+	./$(FILEGEN_BIN) verify quick_omp_output.bin
+	./$(FILEGEN_BIN) verify quick_ff_output.bin
+	./$(FILEGEN_BIN) compare quick_omp_output.bin quick_ff_output.bin
 
-# Performance comparison
-perf-test: openmp fastflow
+# Performance comparison on medium-sized input
+perf-test: openmp fastflow filegen
 	@echo "=== Performance Comparison ==="
-	./$(OMP_BIN) generate
-	@echo "OpenMP Performance:"
-	./$(OMP_BIN) performance medium_omp.bin
-	@echo ""
-	@echo "FastFlow Performance:"
-	./$(FF_BIN) performance medium_omp.bin
+	./$(FILEGEN_BIN) gen_size medium.bin 100
+	@echo "--- OpenMP ---"
+	./$(OMP_BIN) performance medium.bin
+	@echo "--- FastFlow ---"
+	./$(FF_BIN) performance medium.bin
 
-# Clean up
+# Clean everything
 clean:
-	rm -f $(OMP_BIN) $(FF_BIN)
+	rm -f $(OMP_BIN) $(FF_BIN) $(FILEGEN_BIN)
 	rm -f *.bin
 	rm -rf temp
