@@ -32,14 +32,14 @@ all: openmp fastflow filegen
 # Build OpenMP binary
 openmp: $(OMP_BIN)
 
-$(OMP_BIN): $(OMP_DIR)/omp_main.cpp $(INCLUDE_DIR)/record.hpp $(OMP_DIR)/omp.hpp src/filegen/filegen.cpp src/chunking/chunking.cpp
-	$(CXX) $(CXXFLAGS) $(OMP_FLAGS) $(INCLUDES) -o $@ $(OMP_DIR)/omp_main.cpp src/filegen/filegen.cpp src/chunking/chunking.cpp
+$(OMP_BIN): $(OMP_DIR)/omp_main.cpp $(INCLUDE_DIR)/record.hpp $(OMP_DIR)/omp.hpp src/filegen/filegen.cpp src/chunking/chunking.cpp src/merging/merging.cpp
+	$(CXX) $(CXXFLAGS) $(OMP_FLAGS) $(INCLUDES) -o $@ $(OMP_DIR)/omp_main.cpp src/filegen/filegen.cpp src/chunking/chunking.cpp src/merging/merging.cpp
 
 # Build FastFlow binary
 fastflow: $(FF_BIN)
 
-$(FF_BIN): $(FF_DIR)/ff_main.cpp $(INCLUDE_DIR)/record.hpp $(FF_DIR)/ff.hpp src/filegen/filegen.cpp src/chunking/chunking.cpp
-	$(CXX) $(CXXFLAGS) $(FF_INCLUDES) $(INCLUDES) -o $@ $(FF_DIR)/ff_main.cpp src/filegen/filegen.cpp src/chunking/chunking.cpp -pthread
+$(FF_BIN): $(FF_DIR)/ff_main.cpp $(INCLUDE_DIR)/record.hpp $(FF_DIR)/ff.hpp src/filegen/filegen.cpp src/chunking/chunking.cpp src/merging/merging.cpp
+	$(CXX) $(CXXFLAGS) $(FF_INCLUDES) $(INCLUDES) -o $@ $(FF_DIR)/ff_main.cpp src/filegen/filegen.cpp src/chunking/chunking.cpp src/merging/merging.cpp -pthread
 
 # Build filegen CLI tool
 filegen: $(FILEGEN_BIN)

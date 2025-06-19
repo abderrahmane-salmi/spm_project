@@ -16,6 +16,7 @@
 #include "../include/record.hpp"
 #include "../include/record_io.hpp"
 #include "../chunking/chunking.hpp"
+#include "../merging/merging.hpp"
 
 class OpenMPExternalMergeSort {
 private:
@@ -81,7 +82,7 @@ public:
         }
         
         // PHASE 2: Merge all sorted chunks back into one sorted output
-        if (!merge_sorted_runs_parallel(output_file)) {
+        if (!merge_sorted_files(temp_files_, output_file)) {
             std::cerr << "Failed to merge sorted runs" << std::endl;
             return false;
         }
@@ -240,127 +241,6 @@ private:
             std::cout << "Thread " << thread_id << ": Processed " << records.size() 
                       << " records, temp file: " << temp_file << std::endl;
         }
-        
-        return true;
-    }
-    
-    /**
-     * Phase 2: Merge sorted temporary files into a single sorted output file
-     * 
-     * This function takes a vector of temporary files produced by process_chunks_parallel
-     * and merges them into a single sorted output file. If there's only one temporary file,
-     * it simply copies it to the output file.
-     * 
-     * @param output_file The path to the output file where the sorted records will be written.
-     * @return true if the merge was successful, false otherwise.
-     */
-    bool merge_sorted_runs_parallel(const std::string& output_file) {
-        auto start_time = std::chrono::high_resolution_clock::now();
-        
-        std::cout << "Phase 2: Merging sorted runs (parallel)..." << std::endl;
-        
-        // Check if there are any temporary files to merge
-        if (temp_files_.empty()) {
-            std::cerr << "No temp files to merge" << std::endl;
-            return false;
-        }
-        
-        // If there's only one temporary file, simply copy it to the output file
-        if (temp_files_.size() == 1) {
-            std::filesystem::copy_file(temp_files_[0], output_file, std::filesystem::copy_options::overwrite_existing);
-            auto end_time = std::chrono::high_resolution_clock::now();
-            phase2_time_ = std::chrono::duration<double>(end_time - start_time).count();
-            return true;
-        }
-        
-         // If multiple files, perform a parallel merge using the k-way merge algorithm
-        bool success = k_way_merge_parallel(temp_files_, output_file);
-        
-        auto end_time = std::chrono::high_resolution_clock::now();
-        phase2_time_ = std::chrono::duration<double>(end_time - start_time).count();
-        
-        std::cout << "Phase 2 completed in " << phase2_time_ << " seconds" << std::endl;
-        return success;
-    }
-    
-    /**
-     * K-way merge from multiple sorted temp files into one output
-     * 
-     * This function takes a vector of temporary files produced by process_chunks_parallel
-     * and merges them into a single sorted output file. It uses a priority queue to keep track of the
-     * current smallest record from each file and writes the merged records to the output file.
-     * 
-     * @param temp_files The vector of temporary files to merge.
-     * @param output_file The path to the output file where the sorted records will be written.
-     * @return true if the merge was successful, false otherwise.
-     */
-    bool k_way_merge_parallel(const std::vector<std::string>& temp_files, 
-                             const std::string& output_file) {
-        // Define a struct to hold a record and its corresponding file index
-        struct MergeElement {
-            Record record; // The record to be merged
-            size_t file_index; // The index of the file this record comes from
-            
-            // Custom comparison operator for the priority queue
-            bool operator>(const MergeElement& other) const {
-                return record.key > other.record.key;
-            }
-        };
-        
-        // Create a priority queue to hold the records to be merged
-        std::priority_queue<MergeElement, std::vector<MergeElement>, std::greater<MergeElement>> pq;
-        
-        // Create a vector to hold the input streams for each temporary file
-        std::vector<std::unique_ptr<std::ifstream>> input_streams(temp_files.size());
-        
-        // Step 1: Open all temp files and insert first record of each into priority queue
-        for (size_t i = 0; i < temp_files.size(); ++i) {
-            // Open the current temporary file
-            input_streams[i] = std::make_unique<std::ifstream>(temp_files[i], std::ios::binary);
-            if (!input_streams[i]->is_open()) {
-                std::cerr << "Failed to open temp file for merging: " << temp_files[i] << std::endl;
-                return false;
-            }
-            Record rec;
-            if (rec.read_from_stream(*input_streams[i])) {
-                // Add the first record from the current file to the priority queue
-                pq.push(MergeElement{std::move(rec), i});
-            }
-        }
-        
-        // Open the output file
-        std::ofstream output(output_file, std::ios::binary);
-        if (!output) {
-            std::cerr << "Failed to open output file for final merge" << std::endl;
-            return false;
-        }
-        
-        // Initialize a counter for the number of merged records
-        size_t merged_count = 0;
-
-        // Step 2: Continuously write smallest record and refill from the same file
-        while (!pq.empty()) {
-            // Extract the smallest record from the priority queue
-            MergeElement smallest = std::move(const_cast<MergeElement&>(pq.top()));
-            pq.pop();
-            
-            // Write the smallest record to the output file
-            if (!smallest.record.write_to_stream(output)) {
-                std::cerr << "Failed to write record during merge" << std::endl;
-                return false;
-            }
-            ++merged_count;
-            
-            // Read the next record from the same file
-            Record next_rec;
-            if (next_rec.read_from_stream(*input_streams[smallest.file_index])) {
-                // Add the next record to the priority queue
-                pq.push(MergeElement{std::move(next_rec), smallest.file_index});
-            }
-        }
-        
-        std::cout << "Merged " << merged_count << " records into output file" << std::endl;
-        output.close();
         
         return true;
     }

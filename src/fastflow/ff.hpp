@@ -13,6 +13,7 @@
 
 #include "../include/record.hpp"
 #include "../chunking/chunking.hpp"
+#include "../merging/merging.hpp"
 
 using namespace ff;
 
@@ -245,7 +246,7 @@ public:
         std::cout << "Sorted " << sorted_files.size() << " chunks in parallel" << std::endl;
 
         // Phase 3: Merge sorted files into a single sorted output file
-        merge_sorted_chunks(sorted_files, output_file);
+        merge_sorted_files(sorted_files, output_file);
         std::cout << "Merged chunks into final output: " << output_file << std::endl;
 
         cleanup_temp_files();
@@ -298,90 +299,6 @@ private:
 
         // Return the sorted file paths gathered by the collector
         return collector.get_sorted_files();
-    }
-
-    /**
-     * Phase 3: Merge sorted files into a single sorted output file
-     * 
-     * This function takes a vector of sorted file paths and performs a k-way 
-     * merge using a priority queue to merge records from these files into 
-     * a single output file. If there is only one sorted file, it simply renames 
-     * it to the output file. It throws an exception if no files are provided 
-     * or if any file operation fails.
-     * 
-     * @param sorted_files A vector containing paths to the sorted input files.
-     * @param output_file The path to the output file where the merged result will be written.
-     */
-    void merge_sorted_chunks(const std::vector<std::string>& sorted_files, const std::string& output_file) {
-        // Check if there are any files to merge
-        if (sorted_files.empty()) {
-            throw std::runtime_error("No sorted files to merge");
-        }
-
-        // Optimization: If there's only one file, simply rename it to the output file
-        if (sorted_files.size() == 1) {
-            fs::rename(sorted_files[0], output_file);
-            return;
-        }
-
-        // Define a struct to hold a record and its file index
-        struct FileRecord {
-            Record record;
-            size_t file_index;
-            
-            bool operator>(const FileRecord& other) const {
-                return record.key > other.record.key;
-            }
-        };
-
-        // Open all sorted files
-        std::vector<std::ifstream> input_files(sorted_files.size());
-        for (size_t i = 0; i < sorted_files.size(); i++) {
-            input_files[i].open(sorted_files[i], std::ios::binary);
-            if (!input_files[i].is_open()) {
-                throw std::runtime_error("Cannot open sorted file: " + sorted_files[i]);
-            }
-        }
-
-        // Initialize priority queue with first record from each file
-        std::priority_queue<FileRecord, std::vector<FileRecord>, std::greater<FileRecord>> pq;
-        
-        for (size_t i = 0; i < input_files.size(); i++) {
-            Record record;
-            // Read the first record from each file and add it to the priority queue
-            if (record.read_from_stream(input_files[i])) {
-                pq.push({std::move(record), i});
-            }
-        }
-
-        // Open output file
-        std::ofstream output(output_file, std::ios::binary);
-        if (!output.is_open()) {
-            throw std::runtime_error("Cannot create output file: " + output_file);
-        }
-
-        // Merge records from the priority queue
-        while (!pq.empty()) {
-            // Get the smallest record from the priority queue
-            FileRecord file_record = pq.top();
-            pq.pop();
-
-            // Write the smallest record to output
-            file_record.record.write_to_stream(output);
-
-            // Read next record from the same file
-            Record next_record;
-            if (next_record.read_from_stream(input_files[file_record.file_index])) {
-                // Add the next record to the priority queue
-                pq.push({std::move(next_record), file_record.file_index});
-            }
-        }
-
-        // Close all files
-        output.close();
-        for (auto& file : input_files) {
-            file.close();
-        }
     }
 
     void cleanup_temp_files() {
