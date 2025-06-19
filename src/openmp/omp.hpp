@@ -193,8 +193,13 @@ private:
             
             // Check if the memory usage exceeds the limit per thread
             if (bytes_read > memory_limit_per_thread) {
-                std::cerr << "Thread " << thread_id << ": Memory budget exceeded" << std::endl;
-                break;
+                static bool warned = false;
+                if (!warned) {
+                    std::cerr << "Warning: Thread " << thread_id << " exceeded memory budget (" 
+                            << bytes_read << " > " << memory_limit_per_thread << " bytes)" << std::endl;
+                    warned = true;
+                }
+                // Do NOT break — continue reading the full chunk
             }
             
             // Add the record to the vector of records
