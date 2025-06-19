@@ -55,18 +55,20 @@ public:
     }
     
     
+    
     /**
-     * === Main entry point to sort an input file and save sorted result ===
-     * 
-     * This function performs the following steps:
-     * 1. Creates sorted runs of the input file in parallel using OpenMP.
-     * 2. Merges the sorted runs into a single sorted file in parallel using OpenMP.
-     * 3. Prints statistics about the sort.
-     * 4. Deletes all temporary files created during the sort.
-     * 
-     * @param input_file The file to sort.
-     * @param output_file The file to write the sorted result to.
-     * @return true if the sort was successful, false otherwise.
+     * Main entry point to sort an input file and save the sorted result.
+     *
+     * This function coordinates the external merge sort process using OpenMP.
+     * It performs the following steps:
+     * 1. Splits the input file into smaller chunks.
+     * 2. Sorts the chunks in parallel using OpenMP.
+     * 3. Merges the sorted chunks into a single sorted output file.
+     * 4. Cleans up temporary files created during the process.
+     *
+     * @param input_file The path to the input file to be sorted.
+     * @param output_file The path to the file where the sorted result will be saved.
+     * @return true if the sorting was successful, false otherwise.
      */
     bool sort_file(const std::string& input_file, const std::string& output_file) {
         auto start_time = std::chrono::high_resolution_clock::now();
@@ -74,14 +76,18 @@ public:
         std::cout << "Starting OpenMP external merge sort..." << std::endl;
         std::cout << "Input: " << input_file << std::endl;
         std::cout << "Output: " << output_file << std::endl;
+
+        // PHASE 1: Divide file into chunks
+        auto chunk_files = generate_chunk_files(input_file, memory_budget_ * 0.8, temp_dir_);
+        std::cout << "Phase 1: Created " << chunk_files.size() << " chunk files." << std::endl;
         
-        // PHASE 1: Divide file into chunks, sort them in parallel, write to temp files
-        if (!create_sorted_runs_parallel(input_file)) {
+        // PHASE 2: Sort chunks in parallel, and write to temp files
+        if (!parallel_sort_chunks(chunk_files)) {
             std::cerr << "Failed to create sorted runs" << std::endl;
             return false;
         }
         
-        // PHASE 2: Merge all sorted chunks back into one sorted output
+        // PHASE 3: Merge all sorted chunks back into one sorted output
         if (!merge_sorted_files(temp_files_, output_file)) {
             std::cerr << "Failed to merge sorted runs" << std::endl;
             return false;
@@ -106,17 +112,8 @@ private:
      * @param input_file The file to sort.
      * @return true if the sorted runs were created successfully, false otherwise.
      */
-    bool create_sorted_runs_parallel(const std::string& input_file) {
-        auto start_time = std::chrono::high_resolution_clock::now();
-        
-        std::cout << "Phase 1: Creating sorted runs (parallel)..." << std::endl;
-        
-        // Step 1: Divide file into chunks
-        // Why 80%? This reserves some buffer for overhead (e.g., indexing, allocations) while keeping chunk sizes manageable.
-        auto chunk_files = generate_chunk_files(input_file, memory_budget_ * 0.8, temp_dir_);
-        std::cout << "Created " << chunk_files.size() << " chunk files." << std::endl;
-        
-        // Step 2: Generate file paths for temporary sorted files
+    bool parallel_sort_chunks(const std::vector<std::string>& chunk_files) {
+        // Prepare temp_files_ to store sorted chunk file paths
         temp_files_.resize(chunk_files.size());
         for (size_t i = 0; i < chunk_files.size(); ++i) {
             temp_files_[i] = temp_dir_ + "/run_" + std::to_string(i) + ".tmp";
@@ -124,7 +121,7 @@ private:
         
         bool success = true;
         
-        // Step 3: Process each chunk in parallel
+        // Process each chunk in parallel
         // Use OpenMP to parallelize the loop
         #pragma omp parallel for schedule(dynamic) shared(success)
         for (int i = 0; i < static_cast<int>(chunk_files.size()); ++i) {
@@ -145,11 +142,6 @@ private:
                 }
             }
         }
-        
-        auto end_time = std::chrono::high_resolution_clock::now();
-        phase1_time_ = std::chrono::duration<double>(end_time - start_time).count();
-        
-        std::cout << "Phase 1 completed in " << phase1_time_ << " seconds" << std::endl;
         return success;
     }
     
