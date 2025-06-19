@@ -23,4 +23,14 @@ struct ChunkInfo {
  */
 std::vector<ChunkInfo> analyze_file_for_chunks(const std::string& input_file, size_t memory_budget_bytes);
 
+/**
+ * Analyzes the file and creates actual chunk files on disk.
+ *
+ * @param input_file Path to the original input file.
+ * @param memory_budget_bytes Memory budget per chunk.
+ * @param temp_dir Directory where chunk files will be stored.
+ * @return Vector of paths to generated chunk files.
+ */
+std::vector<std::string> generate_chunk_files(const std::string& input_file, size_t memory_budget_bytes, const std::string& temp_dir);
+
 #endif // CHUNKING_HPP

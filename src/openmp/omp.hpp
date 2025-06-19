@@ -110,19 +110,14 @@ private:
         
         std::cout << "Phase 1: Creating sorted runs (parallel)..." << std::endl;
         
-        // Step 1: Analyze file into chunks based on size and memory budget
+        // Step 1: Divide file into chunks
         // Why 80%? This reserves some buffer for overhead (e.g., indexing, allocations) while keeping chunk sizes manageable.
-        std::vector<ChunkInfo> chunks = analyze_file_for_chunks(input_file, memory_budget_ * 0.8);
-        if (chunks.empty()) {
-            std::cerr << "Failed to analyze input file" << std::endl;
-            return false;
-        }
-        
-        std::cout << "File analysis complete. Creating " << chunks.size() << " chunks." << std::endl;
+        auto chunk_files = generate_chunk_files(input_file, memory_budget_ * 0.8, temp_dir_);
+        std::cout << "Created " << chunk_files.size() << " chunk files." << std::endl;
         
         // Step 2: Generate file paths for temporary sorted files
-        temp_files_.resize(chunks.size());
-        for (size_t i = 0; i < chunks.size(); ++i) {
+        temp_files_.resize(chunk_files.size());
+        for (size_t i = 0; i < chunk_files.size(); ++i) {
             temp_files_[i] = temp_dir_ + "/run_" + std::to_string(i) + ".tmp";
         }
         
@@ -131,7 +126,7 @@ private:
         // Step 3: Process each chunk in parallel
         // Use OpenMP to parallelize the loop
         #pragma omp parallel for schedule(dynamic) shared(success)
-        for (int i = 0; i < static_cast<int>(chunks.size()); ++i) {
+        for (int i = 0; i < static_cast<int>(chunk_files.size()); ++i) {
             // If any thread has already failed, skip the current iteration
             if (!success) continue;
             
@@ -139,7 +134,7 @@ private:
             int thread_id = omp_get_thread_num();
 
             // Process the current chunk in parallel
-            if (!process_chunk_parallel(input_file, chunks[i], temp_files_[i], thread_id)) {
+            if (!process_chunk_parallel(chunk_files[i], temp_files_[i], thread_id)) {
                 // If processing fails, set success to false and print an error message
                 // Used a critical section to ensure only one thread can execute this at a time
                 #pragma omp critical
@@ -164,48 +159,39 @@ private:
      * and writes the sorted records to a temporary file. It ensures that the memory usage
      * per thread does not exceed the specified memory budget.
      * 
-     * @param input_file The path to the input file to read from.
-     * @param chunk The ChunkInfo structure containing details about the chunk to process.
+     * @param chunk_file Path to the chunk file (already extracted from the input).
      * @param temp_file The path to the temporary file where sorted records will be written.
      * @param thread_id The ID of the thread processing the chunk, used for logging.
      * @return true if the chunk was processed successfully, false otherwise.
      */
 
-    bool process_chunk_parallel(const std::string& input_file, 
-                               const ChunkInfo& chunk, 
+    bool process_chunk_parallel(const std::string& chunk_file, 
                                const std::string& temp_file,
                                int thread_id) {
-        // Preallocate memory for the records to avoid reallocations
         std::vector<Record> records;
-        records.reserve(chunk.num_records);
         
-        // Open the input file in binary mode
-        std::ifstream input(input_file, std::ios::binary);
-        if (!input) {
-            std::cerr << "Thread " << thread_id << ": Failed to open input file" << std::endl;
+        // Open the chunk file
+        std::ifstream input(chunk_file, std::ios::binary);
+        if (!input.is_open()) {
+            std::cerr << "Thread " << thread_id << ": Failed to open chunk file: " << chunk_file << std::endl;
             return false;
         }
-        
-        // Seek to the start of the chunk in the input file
-        input.seekg(chunk.offset_bytes);
 
         // Initialize variables to track the number of bytes read and the memory usage
         size_t bytes_read = 0;
         size_t memory_limit_per_thread = memory_budget_ / num_threads_;
         
-        // Read records from the input file until the end of the chunk is reached
-        while (bytes_read < chunk.length_bytes && input.good()) {
+        // Read all records from the chunk file
+        while (input.good()) {
             Record record;
             // If a record cannot be read, break out of the loop
             if (!record.read_from_stream(input)) break;
             
             // Update the number of bytes read and the memory usage
             bytes_read += record.total_size();
-            // Approximate memory usage: size of record + payload size
-            size_t approx_mem_usage = bytes_read; // rough but sufficient
             
             // Check if the memory usage exceeds the limit per thread
-            if (approx_mem_usage > memory_limit_per_thread) {
+            if (bytes_read > memory_limit_per_thread) {
                 std::cerr << "Thread " << thread_id << ": Memory budget exceeded" << std::endl;
                 break;
             }

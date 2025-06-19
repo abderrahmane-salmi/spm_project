@@ -2,7 +2,20 @@
 #include "../include/record.hpp"
 #include <fstream>
 #include <stdexcept>
+#include <vector>
 
+/**
+ * Analyze a binary file of records and split it into memory-bounded chunks.
+ * 
+ * Reads the input file and creates a vector of ChunkInfo objects, each describing
+ * a contiguous block of records in the file. The chunks are sized to stay within
+ * the given memory budget. The method returns a vector of ChunkInfo objects
+ * describing all the chunks in the file.
+ *
+ * @param input_file Path to the input file.
+ * @param memory_budget_bytes Approximate max size per chunk (in bytes).
+ * @return Vector of ChunkInfo, each describing a chunk.
+ */
 std::vector<ChunkInfo> analyze_file_for_chunks(const std::string& input_file, size_t memory_budget_bytes) {
     std::ifstream in(input_file, std::ios::binary);
     if (!in.is_open()) {
@@ -39,4 +52,40 @@ std::vector<ChunkInfo> analyze_file_for_chunks(const std::string& input_file, si
 
     in.close();
     return chunks;
+}
+
+/**
+ * Analyzes the file and creates actual chunk files on disk.
+ *
+ * @param input_file Path to the original input file.
+ * @param memory_budget_bytes Memory budget per chunk.
+ * @param temp_dir Directory where chunk files will be stored.
+ * @return Vector of paths to generated chunk files.
+ */
+std::vector<std::string> generate_chunk_files(const std::string& input_file, size_t memory_budget_bytes, const std::string& temp_dir) {
+    auto chunks = analyze_file_for_chunks(input_file, memory_budget_bytes);
+    std::vector<std::string> chunk_files;
+
+    for (size_t i = 0; i < chunks.size(); ++i) {
+        const ChunkInfo& info = chunks[i];
+        std::string chunk_file = temp_dir + "/chunk_" + std::to_string(i) + ".bin";
+
+        std::ifstream in(input_file, std::ios::binary);
+        std::ofstream out(chunk_file, std::ios::binary);
+        if (!in.is_open() || !out.is_open()) {
+            throw std::runtime_error("Error accessing files for chunk writing");
+        }
+
+        in.seekg(info.offset_bytes, std::ios::beg);
+
+        std::vector<char> buffer(info.length_bytes);
+        in.read(buffer.data(), info.length_bytes);
+        out.write(buffer.data(), info.length_bytes);
+
+        in.close();
+        out.close();
+        chunk_files.push_back(chunk_file);
+    }
+
+    return chunk_files;
 }

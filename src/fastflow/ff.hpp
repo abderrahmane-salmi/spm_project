@@ -237,8 +237,7 @@ public:
         std::cout << "Workers: " << num_workers << std::endl;
 
         // Use common chunking logic
-        auto chunk_info = analyze_file_for_chunks(input_file, memory_budget * 0.8);
-        auto chunk_files = create_chunks(input_file, chunk_info);
+        auto chunk_files = generate_chunk_files(input_file, memory_budget * 0.8, temp_dir);
         std::cout << "Created " << chunk_files.size() << " chunks" << std::endl;
 
         // Sort in parallel
