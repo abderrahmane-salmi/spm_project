@@ -236,15 +236,15 @@ public:
         std::cout << "Memory budget: " << (memory_budget / 1024 / 1024) << " MB" << std::endl;
         std::cout << "Workers: " << num_workers << std::endl;
 
-        // Use common chunking logic
+        // Phase 1: Divide file into chunks
         auto chunk_files = generate_chunk_files(input_file, memory_budget * 0.8, temp_dir);
         std::cout << "Created " << chunk_files.size() << " chunks" << std::endl;
 
-        // Sort in parallel
+        // Phase 2: Sort chunks in parallel using FastFlow farm
         auto sorted_files = parallel_sort_chunks(chunk_files);
         std::cout << "Sorted " << sorted_files.size() << " chunks in parallel" << std::endl;
 
-        // Merge
+        // Phase 3: Merge sorted files into a single sorted output file
         merge_sorted_chunks(sorted_files, output_file);
         std::cout << "Merged chunks into final output: " << output_file << std::endl;
 
@@ -253,48 +253,6 @@ public:
 
 
 private:
-    /**
-     * Phase 1: Read input file and split it into chunks
-     * 
-     * Creates chunks from the input file by reading records until the memory limit
-     * is reached, and writing them to a new file in the temporary directory.
-     * The method creates as many chunks as necessary to process the whole input file.
-     * The method returns a vector of file paths to the chunk files.
-     *
-     * @param input_file The path to the input file to be split into chunks.
-     * @return A vector of file paths to the created chunk files.
-     */
-    std::vector<std::string> create_chunks(const std::string& input_file, const std::vector<ChunkInfo>& chunks) {
-        std::vector<std::string> chunk_files;
-
-        for (size_t i = 0; i < chunks.size(); ++i) {
-            const ChunkInfo& info = chunks[i];
-
-            std::string chunk_file = temp_dir + "/chunk_" + std::to_string(i) + ".bin";
-            std::ofstream out(chunk_file, std::ios::binary);
-            std::ifstream in(input_file, std::ios::binary);
-
-            if (!in.is_open() || !out.is_open()) {
-                throw std::runtime_error("Error accessing files for chunk writing");
-            }
-
-            // Seek to offset
-            in.seekg(info.offset_bytes, std::ios::beg);
-
-            // Read exact bytes
-            std::vector<char> buffer(info.length_bytes);
-            in.read(buffer.data(), info.length_bytes);
-            out.write(buffer.data(), info.length_bytes);
-
-            in.close();
-            out.close();
-
-            chunk_files.push_back(chunk_file);
-        }
-
-        return chunk_files;
-    }
-
     /**
      * Phase 2: Sort chunks in parallel using FastFlow farm
      *
