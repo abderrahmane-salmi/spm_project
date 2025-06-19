@@ -10,7 +10,9 @@
 #include <queue>
 #include <filesystem>
 #include <memory>
+
 #include "../include/record.hpp"
+#include "../chunking/chunking.hpp"
 
 using namespace ff;
 
@@ -228,27 +230,28 @@ public:
      *
      * @param input_file The path to the input file to be sorted.
      * @param output_file The path to the file where the sorted result will be saved.
-     */
+    */
     void sort_file(const std::string& input_file, const std::string& output_file) {
         std::cout << "FastFlow External MergeSort starting..." << std::endl;
         std::cout << "Memory budget: " << (memory_budget / 1024 / 1024) << " MB" << std::endl;
         std::cout << "Workers: " << num_workers << std::endl;
 
-        // Phase 1: Split input file into chunks
-        auto chunk_files = create_chunks(input_file);
+        // Use common chunking logic
+        auto chunk_info = analyze_file_for_chunks(input_file, memory_budget * 0.8);
+        auto chunk_files = create_chunks(input_file, chunk_info);
         std::cout << "Created " << chunk_files.size() << " chunks" << std::endl;
 
-        // Phase 2: Parallel sorting using FastFlow Farm
+        // Sort in parallel
         auto sorted_files = parallel_sort_chunks(chunk_files);
         std::cout << "Sorted " << sorted_files.size() << " chunks in parallel" << std::endl;
 
-        // Phase 3: Merge sorted chunks
+        // Merge
         merge_sorted_chunks(sorted_files, output_file);
         std::cout << "Merged chunks into final output: " << output_file << std::endl;
 
-        // Clean up after sorting
         cleanup_temp_files();
     }
+
 
 private:
     /**
@@ -262,66 +265,34 @@ private:
      * @param input_file The path to the input file to be split into chunks.
      * @return A vector of file paths to the created chunk files.
      */
-    std::vector<std::string> create_chunks(const std::string& input_file) {
-        // Open the input file in binary mode
-        std::ifstream infile(input_file, std::ios::binary);
-        if (!infile.is_open()) {
-            throw std::runtime_error("Cannot open input file: " + input_file);
-        }
-
-        // Initialize a vector to store the paths of the chunk files
+    std::vector<std::string> create_chunks(const std::string& input_file, const std::vector<ChunkInfo>& chunks) {
         std::vector<std::string> chunk_files;
-        
-        // Initialize a counter for the chunk files
-        size_t chunk_id = 0;
-        
-        // Set the memory limit for each chunk (80% of the total memory budget) (leave room for overhead)
-        const size_t chunk_memory_limit = memory_budget * 0.8;
 
-        // Loop until the end of the input file is reached
-        while (infile.good()) {
-            // Create a file path for the current chunk file
-            std::string chunk_file = temp_dir + "/chunk_" + std::to_string(chunk_id) + ".bin";
-            // Open the chunk file in binary mode
-            std::ofstream chunk_out(chunk_file, std::ios::binary);
-            
-            // Initialize variables to track the memory used and whether a chunk was created
-            size_t memory_used = 0;
-            bool chunk_created = false;
+        for (size_t i = 0; i < chunks.size(); ++i) {
+            const ChunkInfo& info = chunks[i];
 
-            // Keep writing records until chunk is full or the end of the input file is reached
-            while (infile.good() && memory_used < chunk_memory_limit) {
-                // Read a record from the input file
-                Record record;
-                if (record.read_from_stream(infile)) {
-                    // Write the record to the chunk file
-                    record.write_to_stream(chunk_out);
-                    // Update the memory used
-                    memory_used += record.total_size();
-                    // Mark that a chunk was created
-                    chunk_created = true;
-                } else {
-                    // Break out of the loop if the end of the input file is reached
-                    break;
-                }
+            std::string chunk_file = temp_dir + "/chunk_" + std::to_string(i) + ".bin";
+            std::ofstream out(chunk_file, std::ios::binary);
+            std::ifstream in(input_file, std::ios::binary);
+
+            if (!in.is_open() || !out.is_open()) {
+                throw std::runtime_error("Error accessing files for chunk writing");
             }
 
-            // Close the chunk file
-            chunk_out.close();
+            // Seek to offset
+            in.seekg(info.offset_bytes, std::ios::beg);
 
-            // If a chunk was created, add its path to the vector and increment the chunk ID
-            if (chunk_created) {
-                chunk_files.push_back(chunk_file);
-                chunk_id++;
-            } else {
-                // If no chunk was created, remove the empty chunk file and break out of the loop
-                fs::remove(chunk_file);
-                break;
-            }
+            // Read exact bytes
+            std::vector<char> buffer(info.length_bytes);
+            in.read(buffer.data(), info.length_bytes);
+            out.write(buffer.data(), info.length_bytes);
+
+            in.close();
+            out.close();
+
+            chunk_files.push_back(chunk_file);
         }
 
-        // Close the input file and return the vector of chunk file paths
-        infile.close();
         return chunk_files;
     }
 

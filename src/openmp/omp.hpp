@@ -15,6 +15,7 @@
 
 #include "../include/record.hpp"
 #include "../include/record_io.hpp"
+#include "../chunking/chunking.hpp"
 
 class OpenMPExternalMergeSort {
 private:
@@ -29,13 +30,6 @@ private:
     double phase2_time_;
     
 public:
-    // Struct to store file chunk information
-    struct ChunkInfo {
-        size_t start_offset; // Start offset in the file
-        size_t size; // Byte size of chunk
-        size_t estimated_records; // Estimate of how many records are in chunk
-    };
-
     OpenMPExternalMergeSort(size_t memory_budget = 1024 * 1024 * 1024, // default: 1GB
                            size_t num_threads = 0,
                            const std::string& temp_dir = "./temp_omp") 
@@ -117,7 +111,8 @@ private:
         std::cout << "Phase 1: Creating sorted runs (parallel)..." << std::endl;
         
         // Step 1: Analyze file into chunks based on size and memory budget
-        std::vector<ChunkInfo> chunks = analyze_file_for_chunks(input_file);
+        // Why 80%? This reserves some buffer for overhead (e.g., indexing, allocations) while keeping chunk sizes manageable.
+        std::vector<ChunkInfo> chunks = analyze_file_for_chunks(input_file, memory_budget_ * 0.8);
         if (chunks.empty()) {
             std::cerr << "Failed to analyze input file" << std::endl;
             return false;
@@ -182,7 +177,7 @@ private:
                                int thread_id) {
         // Preallocate memory for the records to avoid reallocations
         std::vector<Record> records;
-        records.reserve(chunk.estimated_records);
+        records.reserve(chunk.num_records);
         
         // Open the input file in binary mode
         std::ifstream input(input_file, std::ios::binary);
@@ -192,14 +187,14 @@ private:
         }
         
         // Seek to the start of the chunk in the input file
-        input.seekg(chunk.start_offset);
+        input.seekg(chunk.offset_bytes);
 
         // Initialize variables to track the number of bytes read and the memory usage
         size_t bytes_read = 0;
         size_t memory_limit_per_thread = memory_budget_ / num_threads_;
         
         // Read records from the input file until the end of the chunk is reached
-        while (bytes_read < chunk.size && input.good()) {
+        while (bytes_read < chunk.length_bytes && input.good()) {
             Record record;
             // If a record cannot be read, break out of the loop
             if (!record.read_from_stream(input)) break;
@@ -382,82 +377,6 @@ private:
         output.close();
         
         return true;
-    }
-    
-    /**
-     * Analyzes the input file and divides it into manageable chunks for processing.
-     *
-     * This function reads the specified input file and partitions it into chunks
-     * based on the available memory budget and number of threads configured. Each
-     * chunk is represented by an offset, its size in bytes, and the number of records
-     * it contains. The function returns a vector of ChunkInfo structures, each
-     * detailing the characteristics of a file chunk.
-     *
-     * @param input_file The path to the binary input file to be analyzed.
-     * @return A vector of ChunkInfo objects, each representing a chunk of the file.
-     *         If the file cannot be opened, an empty vector is returned.
-     */
-
-    std::vector<ChunkInfo> analyze_file_for_chunks(const std::string& input_file) {
-        // Initialize an empty vector to store the chunk information
-        std::vector<ChunkInfo> chunks;
-        
-        // Open the input file in binary mode and check if it was successful
-        std::ifstream input(input_file, std::ios::binary | std::ios::ate);
-        if (!input) {
-            std::cerr << "Failed to open input file for analysis" << std::endl;
-            return chunks;
-        }
-        
-        // Get the size of the input file
-        size_t file_size = static_cast<size_t>(input.tellg());
-        // Reset the file pointer to the beginning of the file
-        input.seekg(0);
-        // Initialize the offset to the beginning of the file
-        size_t offset = 0;
-        
-        // Loop through the file until all bytes have been processed
-        while (offset < file_size) {
-            // Calculate the chunk size based on the available memory budget and number of threads
-            // we want to ensure it doesn't exceed the available memory budget per thread or the remaining file size
-            size_t chunk_size = std::min(memory_budget_ / num_threads_, file_size - offset);
-            
-            // Seek to the current offset in the file
-            input.seekg(offset);
-            
-            // Initialize variables to track the number of bytes read and records processed
-            size_t bytes_read = 0;
-            size_t record_count = 0;
-            
-            // Loop through the chunk until all bytes have been processed or an error occurs
-            while (bytes_read < chunk_size && input.good()) {
-                // Create a new Record object to read from the stream
-                Record record;
-                // Get the current file position before reading the record
-                std::streampos before = input.tellg();
-                // Attempt to read the record from the stream
-                if (!record.read_from_stream(input)) break;
-                // Get the current file position after reading the record
-                std::streampos after = input.tellg();
-                // Check if the file position is valid
-                if (before == -1 || after == -1) break;
-
-                // Calculate the size of the record
-                size_t record_size = static_cast<size_t>(after - before);
-                // Increment the bytes read and record count
-                bytes_read += record_size;
-                ++record_count;
-            }
-            
-            // Create a new ChunkInfo object to store the chunk information
-            chunks.push_back(ChunkInfo{offset, bytes_read, record_count});
-            // Increment the offset to the next chunk
-            offset += bytes_read;
-        }
-        
-        // Close the input file and return the vector of chunk information
-        input.close();
-        return chunks;
     }
     
     /**
