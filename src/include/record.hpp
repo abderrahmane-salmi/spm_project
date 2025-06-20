@@ -60,4 +60,8 @@ struct Record {
     size_t total_size() const {
         return sizeof(key) + sizeof(len) + len;
     }
+
+    bool operator<(const Record& other) const {
+        return key < other.key;
+    }
 };

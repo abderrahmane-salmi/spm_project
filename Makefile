@@ -1,6 +1,7 @@
 # Makefile for SPM Project 1 - Distributed Out-of-Core MergeSort
 
 CXX = g++
+MPICXX = mpicxx
 CXXFLAGS = -std=c++17 -O3 -Wall -Wextra
 
 # FastFlow installation path
@@ -10,22 +11,27 @@ FF_INCLUDES = -I$(FF_PATH)
 # OpenMP flags
 OMP_FLAGS = -fopenmp
 
+# MPI flags
+MPIFLAGS = -fopenmp
+
 # Directories
 SRC_DIR = src
 INCLUDE_DIR = $(SRC_DIR)/include
 OMP_DIR = $(SRC_DIR)/openmp
 FF_DIR = $(SRC_DIR)/fastflow
+MPI_DIR = $(SRC_DIR)/mpi
 FILEGEN_DIR = $(SRC_DIR)/filegen
 
 # Output binaries
 OMP_BIN = omp_mergesort
 FF_BIN = ff_mergesort
+MPI_BIN = mpi_mergesort
 FILEGEN_BIN = filegen
 
 # Includes
 INCLUDES = -I$(INCLUDE_DIR)
 
-.PHONY: all clean openmp fastflow filegen test quick-test perf-test
+.PHONY: all clean openmp fastflow mpi filegen test quick-test perf-test test_mpi
 
 all: openmp fastflow filegen
 
@@ -41,13 +47,19 @@ fastflow: $(FF_BIN)
 $(FF_BIN): $(FF_DIR)/ff_main.cpp $(INCLUDE_DIR)/record.hpp $(FF_DIR)/ff.hpp src/filegen/filegen.cpp src/chunking/chunking.cpp src/merging/merging.cpp
 	$(CXX) $(CXXFLAGS) $(FF_INCLUDES) $(INCLUDES) -o $@ $(FF_DIR)/ff_main.cpp src/filegen/filegen.cpp src/chunking/chunking.cpp src/merging/merging.cpp -pthread
 
+# Build MPI binary
+mpi: $(MPI_BIN)
+
+$(MPI_BIN): $(MPI_DIR)/mpi_main.cpp $(MPI_DIR)/mpi.cpp $(MPI_DIR)/mpi.hpp $(INCLUDE_DIR)/record.hpp src/filegen/filegen.cpp src/chunking/chunking.cpp src/merging/merging.cpp
+	$(MPICXX) $(CXXFLAGS) $(MPIFLAGS) $(INCLUDES) -o $@ $(MPI_DIR)/mpi_main.cpp $(MPI_DIR)/mpi.cpp $(MPI_DIR)/mpi.hpp src/filegen/filegen.cpp src/chunking/chunking.cpp src/merging/merging.cpp
+
 # Build filegen CLI tool
 filegen: $(FILEGEN_BIN)
 
 $(FILEGEN_BIN): $(FILEGEN_DIR)/filegen_main.cpp $(FILEGEN_DIR)/filegen.cpp $(FILEGEN_DIR)/filegen.hpp
 	$(CXX) $(CXXFLAGS) $(INCLUDES) -o $@ $(FILEGEN_DIR)/filegen_main.cpp $(FILEGEN_DIR)/filegen.cpp
 
-# Test both implementations
+# Test both OpenMP and FastFlow implementations
 test: openmp fastflow filegen
 	@echo "=== Generating input files ==="
 	./$(FILEGEN_BIN) gen_count small.bin 1000
@@ -94,8 +106,19 @@ perf-test: openmp fastflow filegen
 	@echo "--- FastFlow ---"
 	./$(FF_BIN) performance medium.bin
 
+# Test only MPI implementation
+test_mpi: mpi filegen
+	@echo "=== Generating input file for MPI ==="
+	./$(FILEGEN_BIN) gen_count test_mpi.bin 1000
+
+	@echo "=== Running MPI Sort ==="
+	mpirun -np 4 ./$(MPI_BIN) sort test_mpi.bin test_mpi_output.bin
+
+	@echo "=== Verifying MPI Output ==="
+	./$(FILEGEN_BIN) verify test_mpi_output.bin
+
 # Clean everything
 clean:
-	rm -f $(OMP_BIN) $(FF_BIN) $(FILEGEN_BIN)
+	rm -f $(OMP_BIN) $(FF_BIN) $(MPI_BIN) $(FILEGEN_BIN)
 	rm -f *.bin
 	rm -rf temp
