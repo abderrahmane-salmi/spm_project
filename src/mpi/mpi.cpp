@@ -105,7 +105,7 @@ void calculate_file_partition(
         file.seekg(start_offset);
         
         // Skip to find a complete record boundary
-        while (file.tellg() < file_size) {
+        while (static_cast<size_t>(file.tellg()) < file_size) {
             try {
                 size_t pos = file.tellg();
                 Record temp_record;
@@ -118,7 +118,7 @@ void calculate_file_partition(
                 }
             } catch (...) {
                 // If we can't read a complete record, move forward
-                file.seekg(file.tellg() + 1);
+                file.seekg(file.tellg() + std::streamoff(1));
             }
         }
     }
@@ -127,7 +127,7 @@ void calculate_file_partition(
         // Move end_offset to the beginning of the next complete record
         file.seekg(end_offset);
         
-        while (file.tellg() < file_size) {
+        while (static_cast<size_t>(file.tellg()) < file_size) {
             try {
                 size_t pos = file.tellg();
                 Record temp_record;
@@ -139,7 +139,7 @@ void calculate_file_partition(
                     file.seekg(pos + 1);
                 }
             } catch (...) {
-                file.seekg(file.tellg() + 1);
+                file.seekg(file.tellg() + std::streamoff(1));
             }
         }
     }
@@ -160,7 +160,7 @@ void read_records_from_range(
     
     file.seekg(start_offset);
     
-    while (file.tellg() < end_offset && file.tellg() < file.peek()) {
+    while (static_cast<size_t>(file.tellg()) < end_offset) {
         try {
             Record record;
             if (record.read_from_stream(file)) {
