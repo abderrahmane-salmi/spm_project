@@ -5,6 +5,7 @@
 #include <vector>
 #include <cstdlib>
 #include <ctime>
+#include <cstdio>  // for std::remove
 
 /**
  * Generate a file with a specific number of records
@@ -162,4 +163,23 @@ bool compare_files(const std::string& file1, const std::string& file2) {
     // If we made it through the entire loop without returning, the files match
     std::cout << "File comparison PASSED! Records compared: " << index << std::endl;
     return true;
+}
+
+/**
+ * Delete a file
+ *
+ * Tries to delete the file with the given name. If successful, outputs a success message and returns true.
+ * If the deletion fails, outputs an error message and returns false.
+ *
+ * @param filename The name of the file to delete
+ * @return true if the file was deleted successfully, false otherwise
+ */
+bool delete_file(const std::string& filename) {
+    if (std::remove(filename.c_str()) == 0) {
+        std::cout << "Deleted file: " << filename << std::endl;
+        return true;
+    } else {
+        std::cerr << "Failed to delete file: " << filename << std::endl;
+        return false;
+    }
 }

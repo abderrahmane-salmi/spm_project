@@ -11,6 +11,9 @@ public:
 };
 
 bool verify_sorted_output(const std::string& filename);
+
 bool compare_files(const std::string& file1, const std::string& file2);
+
+bool delete_file(const std::string& filename);
 
 #endif // FILE_UTILS_HPP

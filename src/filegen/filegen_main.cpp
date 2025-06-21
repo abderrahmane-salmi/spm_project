@@ -9,6 +9,7 @@ void print_usage(const std::string& prog) {
     std::cout << "  " << prog << " gen_size  <filename> <size_in_MB>\n";
     std::cout << "  " << prog << " verify    <filename>\n";
     std::cout << "  " << prog << " compare   <file1> <file2>\n";
+    std::cout << "  " << prog << " delete    <filename>\n";
 }
 
 int main(int argc, char* argv[]) {
@@ -59,6 +60,15 @@ int main(int argc, char* argv[]) {
         std::string file1 = argv[2];
         std::string file2 = argv[3];
         compare_files(file1, file2);
+    }
+
+    else if (cmd == "delete") {
+        if (argc != 3) {
+            print_usage(argv[0]);
+            return 1;
+        }
+        std::string filename = argv[2];
+        delete_file(filename);
     }
 
     else {

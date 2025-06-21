@@ -129,13 +129,17 @@ test_mpi2: mpi filegen
 
 test_mpi3: mpi filegen
 	@echo "=== Generating input file for MPI ==="
-	./$(FILEGEN_BIN) gen_size test_mpi3.bin 750
+	./$(FILEGEN_BIN) gen_size test_mpi3.bin 4000
 
 	@echo "=== Running MPI Sort ==="
 	mpirun -np 4 ./$(MPI_BIN) sort test_mpi3.bin test_mpi3_output.bin
 
 	@echo "=== Verifying MPI Output ==="
 	./$(FILEGEN_BIN) verify test_mpi3_output.bin
+
+	@echo "=== Deleting input/output files ==="
+	./$(FILEGEN_BIN) delete test_mpi3.bin
+	./$(FILEGEN_BIN) delete test_mpi3_output.bin
 
 # Clean everything
 clean:
