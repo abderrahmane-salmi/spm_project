@@ -1,8 +1,4 @@
 #include "mpi.hpp"
-#include "../include/record.hpp"
-#include "../chunking/chunking.hpp"
-#include "../merging/merging.hpp"
-#include "../openmp/omp.hpp"
 #include <iostream>
 #include <fstream>
 #include <algorithm>
@@ -11,13 +7,32 @@
 #include <cstring>
 
 #include "../include/record.hpp"
+#include "../chunking/chunking.hpp"
+#include "../merging/merging.hpp"
+#include "../openmp/omp.hpp"
 
+/**
+ * Main MPI sorting function
+ * 
+ * This function coordinates the sorting process using MPI and OpenMP.
+ * It performs the following steps:
+ * 1. Calculates the file partition for this rank
+ * 2. Reads records from the assigned partition
+ * 3. Sorts the local records using OpenMP
+ * 4. Performs a distributed merge phase using MPI
+ * 
+ * @param input_file Path to input file
+ * @param output_file Path to output file
+ * @param memory_budget Memory budget per rank in bytes
+ * @param temp_dir Directory for temporary files
+ */
 void mpi_sort_file(
     const std::string& input_file,
     const std::string& output_file,
     size_t memory_budget,
     const std::string& temp_dir
 ) {
+    // Get the rank and size of the MPI communicator
     int rank, size;
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
     MPI_Comm_size(MPI_COMM_WORLD, &size);
@@ -48,21 +63,35 @@ void mpi_sort_file(
     std::cout << "Rank " << rank << ": Read " << local_records.size() 
               << " records from offset " << start_offset << " to " << end_offset << std::endl;
     
-    // Step 3: Local sorting using OpenMP (reuse existing logic)
+    // Step 3: Local sorting using OpenMP (reusing existing logic)
     auto sort_start = std::chrono::high_resolution_clock::now();
-    
-    #pragma omp parallel for
-    for (size_t i = 0; i < local_records.size(); ++i) {
-        // Records are already loaded, just sort them
+
+    // Save local_records to temp file
+    std::string local_input_file = rank_temp_dir + "/local_input.bin";
+    std::ofstream ofs(local_input_file, std::ios::binary);
+    for (const auto& rec : local_records) {
+        rec.write_to_stream(ofs);
     }
-    
-    // Sort the local records
-    std::sort(local_records.begin(), local_records.end());
+    ofs.close();
+
+    // Sort using OpenMP class
+    std::string local_sorted_file = rank_temp_dir + "/local_sorted.bin";
+    OpenMPExternalMergeSort omp_sorter(memory_budget, 0, rank_temp_dir);
+    omp_sorter.sort_file(local_input_file, local_sorted_file);
+
+    // Load sorted records back into memory
+    local_records.clear();
+    std::ifstream ifs(local_sorted_file, std::ios::binary);
+    Record rec;
+    while (rec.read_from_stream(ifs)) {
+        local_records.push_back(rec);
+    }
+    ifs.close();
     
     auto sort_end = std::chrono::high_resolution_clock::now();
     auto sort_duration = std::chrono::duration_cast<std::chrono::milliseconds>(sort_end - sort_start);
     
-    std::cout << "Rank " << rank << ": Local sorting completed in " 
+    std::cout << "Rank " << rank << ": Local OpenMP sorting completed in " 
               << sort_duration.count() << " ms" << std::endl;
     
     // Step 4: Distributed merge phase
