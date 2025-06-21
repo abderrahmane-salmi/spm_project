@@ -107,6 +107,25 @@ void mpi_sort_file(
     }
 }
 
+/**
+ * Calculate file partition boundaries for each MPI rank.
+ * 
+ * This function determines the starting and ending byte offsets for a 
+ * given rank's partition of a file. It ensures that partitions do not 
+ * split records in the middle by adjusting the offsets to align with 
+ * complete records. The function handles edge cases for the first and 
+ * last rank to cover the entire file without overlap.
+ * 
+ * @param filename The name of the file to partition.
+ * @param rank The current rank in the MPI communicator.
+ * @param size The total number of MPI processes.
+ * @param start_offset Output parameter: The starting byte offset for 
+ *                     this rank's partition.
+ * @param end_offset Output parameter: The ending byte offset for this 
+ *                   rank's partition.
+ * 
+ * @throws std::runtime_error if the file cannot be opened.
+ */
 void calculate_file_partition(
     const std::string& filename,
     int rank,
@@ -114,19 +133,19 @@ void calculate_file_partition(
     size_t& start_offset,
     size_t& end_offset
 ) {
-    // Get file size
+    // Open the file in binary mode and get its size
     std::ifstream file(filename, std::ios::binary | std::ios::ate);
     if (!file) {
         throw std::runtime_error("Cannot open file: " + filename);
     }
     
     size_t file_size = file.tellg();
-    file.seekg(0);
+    file.seekg(0); // Reset the file position to the beginning
     
     // Calculate approximate boundaries
-    size_t chunk_size = file_size / size;
-    start_offset = rank * chunk_size;
-    end_offset = (rank == size - 1) ? file_size : (rank + 1) * chunk_size;
+    size_t chunk_size = file_size / size; // Approximate chunk size
+    start_offset = rank * chunk_size; // Starting offset for this rank
+    end_offset = (rank == size - 1) ? file_size : (rank + 1) * chunk_size; // Ending offset for this rank
     
     // Adjust boundaries to not split records
     if (rank > 0) {
@@ -136,13 +155,15 @@ void calculate_file_partition(
         // Skip to find a complete record boundary
         while (static_cast<size_t>(file.tellg()) < file_size) {
             try {
-                size_t pos = file.tellg();
+                size_t pos = file.tellg(); // Current file position
                 Record temp_record;
                 if (temp_record.read_from_stream(file)) {
+                    // If a complete record is read, update the start offset
                     start_offset = pos;
                     break;
                 } else {
-                    file.clear(); // Clear any failbit
+                    // If not, clear any error flags and move forward
+                    file.clear();
                     file.seekg(pos + 1);
                 }
             } catch (...) {
@@ -158,13 +179,15 @@ void calculate_file_partition(
         
         while (static_cast<size_t>(file.tellg()) < file_size) {
             try {
-                size_t pos = file.tellg();
+                size_t pos = file.tellg(); // Current file position
                 Record temp_record;
                 if (temp_record.read_from_stream(file)) {
+                    // If a complete record is read, update the end offset
                     end_offset = pos;
                     break;
                 } else {
-                    file.clear(); // Clear any failbit
+                    // If not, clear any error flags and move forward
+                    file.clear();
                     file.seekg(pos + 1);
                 }
             } catch (...) {
@@ -176,12 +199,29 @@ void calculate_file_partition(
     file.close();
 }
 
+/**
+ * Reads records from a specified range in a binary file.
+ *
+ * This function opens a binary file and reads all complete records
+ * within the given byte range, appending them to the provided vector.
+ * It starts reading at the specified start offset and continues until
+ * reaching the end offset, ensuring that only complete records are
+ * included in the output vector.
+ *
+ * @param filename The name of the binary file to read from.
+ * @param start_offset The starting byte offset for reading.
+ * @param end_offset The ending byte offset for reading.
+ * @param records Output vector to store the read records.
+ *
+ * @throws std::runtime_error If the file cannot be opened.
+ */
 void read_records_from_range(
     const std::string& filename,
     size_t start_offset,
     size_t end_offset,
     std::vector<Record>& records
 ) {
+    // Open the file and seek to the starting byte offset
     std::ifstream file(filename, std::ios::binary);
     if (!file) {
         throw std::runtime_error("Cannot open file: " + filename);
@@ -189,10 +229,13 @@ void read_records_from_range(
     
     file.seekg(start_offset);
     
+    // Continue reading records until we reach the end offset
     while (static_cast<size_t>(file.tellg()) < end_offset) {
         try {
+            // Attempt to read a record from the file
             Record record;
             if (record.read_from_stream(file)) {
+                // If the read was successful, add the record to the output vector
                 records.push_back(record);
             }
         } catch (...) {
@@ -204,6 +247,25 @@ void read_records_from_range(
     file.close();
 }
 
+/**
+ * Distributed merge phase using Sample Sort approach
+ * 
+ * This function takes a vector of local records sorted by key and
+ * performs the following steps:
+ * 1. Sample local data
+ * 2. Gather all samples at rank 0
+ * 3. Determine splitters
+ * 4. Partition local data based on splitters
+ * 5. All-to-all exchange
+ * 6. Deserialize received data and merge locally
+ * 7. Write to output file (each rank writes to a separate file)
+ * 8. Rank 0 concatenates all rank files to final output
+ * 
+ * @param local_records Vector of local records sorted by key
+ * @param output_file Path to final output file
+ * @param rank Current MPI rank
+ * @param size Total number of MPI processes
+ */
 void distributed_merge(
     std::vector<Record>& local_records,
     const std::string& output_file,
@@ -213,9 +275,12 @@ void distributed_merge(
     // Sample Sort approach for distributed merge
     
     // Step 1: Sample local data
+    // Each rank picks about 100 sample keys from its sorted data to give a preview of its values.
+    // This helps decide how to divide the key space evenly across all ranks.
     std::vector<uint64_t> local_samples;
     size_t sample_size = std::min(size_t(100), local_records.size());
     
+    // Select a subset of local records as samples
     for (size_t i = 0; i < sample_size && i * (local_records.size() / sample_size) < local_records.size(); ++i) {
         size_t idx = i * (local_records.size() / sample_size);
         local_samples.push_back(local_records[idx].key);
@@ -225,12 +290,15 @@ void distributed_merge(
     std::vector<int> sample_counts(size);
     int local_sample_count = local_samples.size();
     
+    // Everyone sends sample sizes to rank 0
     MPI_Gather(&local_sample_count, 1, MPI_INT, sample_counts.data(), 1, MPI_INT, 0, MPI_COMM_WORLD);
     
+    // Gather all samples at rank 0
     std::vector<uint64_t> all_samples;
     std::vector<int> sample_displs(size, 0);
     
     if (rank == 0) {
+        // Calculate displacements for gathering samples
         int total_samples = 0;
         for (int i = 0; i < size; ++i) {
             sample_displs[i] = total_samples;
@@ -239,11 +307,14 @@ void distributed_merge(
         all_samples.resize(total_samples);
     }
     
+    // Everyone sends actual samples to rank 0
     MPI_Gatherv(local_samples.data(), local_sample_count, MPI_UINT64_T,
                 all_samples.data(), sample_counts.data(), sample_displs.data(), 
                 MPI_UINT64_T, 0, MPI_COMM_WORLD);
     
     // Step 3: Determine splitters
+    // Rank 0 picks (size - 1) splitter keys, which act like:
+    // "All records ≤ splitter 0 go to rank 0, all > splitter 0 and ≤ splitter 1 go to rank 1, etc."
     std::vector<uint64_t> splitters(size - 1);
     
     if (rank == 0) {
@@ -261,6 +332,8 @@ void distributed_merge(
     MPI_Bcast(splitters.data(), size - 1, MPI_UINT64_T, 0, MPI_COMM_WORLD);
     
     // Step 4: Partition local data based on splitters
+    // Now each rank knows where each record should go.
+    // It builds partitions[i] = data that should go to rank i.
     std::vector<std::vector<Record>> partitions(size);
     
     for (const auto& record : local_records) {
@@ -286,7 +359,7 @@ void distributed_merge(
         send_counts[i] = send_buffers[i].size();
     }
     
-    // Calculate displacements
+    // Calculate displacements for sending
     for (int i = 1; i < size; ++i) {
         send_displs[i] = send_displs[i-1] + send_counts[i-1];
     }
@@ -310,6 +383,9 @@ void distributed_merge(
     }
     
     // Exchange actual data
+    // every rank sends its pieces to all other ranks
+    // ex: Rank 0 sends partition[0] to rank 0, partition[1] to rank 1, etc. Rank 1 does the same
+    // At the end, each rank receives all the records it’s responsible for.
     std::vector<char> recv_buffer(total_recv_size);
     MPI_Alltoallv(combined_send_buffer.data(), send_counts.data(), send_displs.data(), MPI_CHAR,
                   recv_buffer.data(), recv_counts.data(), recv_displs.data(), MPI_CHAR, MPI_COMM_WORLD);
@@ -360,6 +436,16 @@ void distributed_merge(
     }
 }
 
+/**
+ * Serialize a vector of Records into a contiguous block of memory.
+ * 
+ * The memory layout is as follows:
+ * - First, a size_t indicating the number of records
+ * - Then, each record is serialized in order:
+ *   - uint64_t key
+ *   - uint32_t len
+ *   - char[len] payload
+ */
 std::vector<char> serialize_records(const std::vector<Record>& records) {
     std::vector<char> buffer;
     
@@ -385,6 +471,18 @@ std::vector<char> serialize_records(const std::vector<Record>& records) {
     return buffer;
 }
 
+/**
+ * Deserialize a contiguous block of memory containing Records.
+ * 
+ * The memory layout is as follows:
+ * - First, a size_t indicating the number of records
+ * - Then, each record is deserialized in order:
+ *   - uint64_t key
+ *   - uint32_t len
+ *   - char[len] payload
+ * 
+ * If the buffer is incomplete, an empty vector of Records is returned.
+ */
 std::vector<Record> deserialize_records(const std::vector<char>& buffer) {
     std::vector<Record> records;
     
@@ -427,6 +525,16 @@ std::vector<Record> deserialize_records(const std::vector<char>& buffer) {
     return records;
 }
 
+/**
+ * Runs a performance test on the MPI sorting implementation with various memory budgets.
+ * 
+ * This function executes the `mpi_sort_file` with a range of memory budgets to evaluate
+ * its performance. For each memory budget, it measures the time taken to sort the input
+ * file and outputs the result. The test is performed in parallel across all available MPI
+ * ranks, with rank 0 responsible for logging the performance metrics.
+ *
+ * @param input_file Path to the input file to be sorted.
+ */
 void mpi_performance_test(const std::string& input_file) {
     int rank, size;
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
