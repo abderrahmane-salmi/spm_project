@@ -127,6 +127,16 @@ test_mpi2: mpi filegen
 	@echo "=== Verifying MPI Output ==="
 	./$(FILEGEN_BIN) verify test_mpi2_output.bin
 
+test_mpi3: mpi filegen
+	@echo "=== Generating input file for MPI ==="
+	./$(FILEGEN_BIN) gen_size test_mpi3.bin 750
+
+	@echo "=== Running MPI Sort ==="
+	mpirun -np 4 ./$(MPI_BIN) sort test_mpi3.bin test_mpi3_output.bin
+
+	@echo "=== Verifying MPI Output ==="
+	./$(FILEGEN_BIN) verify test_mpi3_output.bin
+
 # Clean everything
 clean:
 	rm -f $(OMP_BIN) $(FF_BIN) $(MPI_BIN) $(FILEGEN_BIN)
