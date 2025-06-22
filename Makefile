@@ -109,37 +109,60 @@ perf-test: openmp fastflow filegen
 # Test only MPI implementation
 test_mpi: mpi filegen
 	@echo "=== Generating input file for MPI ==="
-	./$(FILEGEN_BIN) gen_count test_mpi.bin 1000
+	./$(FILEGEN_BIN) gen_count file1000.bin 1000
 
 	@echo "=== Running MPI Sort ==="
-	mpirun -np 4 ./$(MPI_BIN) sort test_mpi.bin test_mpi_output.bin
+	mpirun -np 4 ./$(MPI_BIN) sort file1000.bin 256 4
 
 	@echo "=== Verifying MPI Output ==="
-	./$(FILEGEN_BIN) verify test_mpi_output.bin
+	./$(FILEGEN_BIN) verify file1000_mpi_output.bin
+
+	@echo "=== Deleting input/output files ==="
+	./$(FILEGEN_BIN) delete file1000.bin
+	./$(FILEGEN_BIN) delete file1000_mpi_output.bin
 
 test_mpi2: mpi filegen
 	@echo "=== Generating input file for MPI ==="
-	./$(FILEGEN_BIN) gen_size test_mpi2.bin 512
+	./$(FILEGEN_BIN) gen_size file512.bin 512
 
 	@echo "=== Running MPI Sort ==="
-	mpirun -np 4 ./$(MPI_BIN) sort test_mpi2.bin test_mpi2_output.bin
+	mpirun -np 4 ./$(MPI_BIN) sort file512.bin 256 4
 
 	@echo "=== Verifying MPI Output ==="
-	./$(FILEGEN_BIN) verify test_mpi2_output.bin
+	./$(FILEGEN_BIN) verify file512_mpi_output.bin
+
+	@echo "=== Deleting input/output files ==="
+	./$(FILEGEN_BIN) delete file512.bin
+	./$(FILEGEN_BIN) delete file512_mpi_output.bin
 
 test_mpi3: mpi filegen
 	@echo "=== Generating input file for MPI ==="
-	./$(FILEGEN_BIN) gen_size test_mpi3.bin 4000
+	./$(FILEGEN_BIN) gen_size file2gb.bin 2000
 
 	@echo "=== Running MPI Sort ==="
-	mpirun -np 4 ./$(MPI_BIN) sort test_mpi3.bin test_mpi3_output.bin
+	mpirun -np 4 ./$(MPI_BIN) sort file2gb.bin 256 4
 
 	@echo "=== Verifying MPI Output ==="
-	./$(FILEGEN_BIN) verify test_mpi3_output.bin
+	./$(FILEGEN_BIN) verify file2gb_mpi_output.bin
 
 	@echo "=== Deleting input/output files ==="
-	./$(FILEGEN_BIN) delete test_mpi3.bin
-	./$(FILEGEN_BIN) delete test_mpi3_output.bin
+	./$(FILEGEN_BIN) delete file2gb.bin
+	./$(FILEGEN_BIN) delete file2gb_mpi_output.bin
+
+gen4gb: mpi filegen
+	@echo "=== Generating input file 4GB ==="
+	./$(FILEGEN_BIN) gen_size file4gb.bin 4000
+
+test_mpi4: mpi filegen
+	@echo "=== Running MPI Sort ==="
+	mpirun -np 4 ./$(MPI_BIN) sort file4gb.bin 512 4
+
+	@echo "=== Verifying MPI Output ==="
+	./$(FILEGEN_BIN) verify file4gb_mpi_output.bin
+
+	@echo "=== Deleting output file ==="
+	./$(FILEGEN_BIN) delete file4gb_mpi_output.bin
+
 
 # Clean everything
 clean:

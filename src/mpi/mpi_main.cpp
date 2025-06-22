@@ -3,6 +3,7 @@
 #include <mpi.h>
 #include <omp.h>
 #include <unistd.h>
+#include <filesystem>
 
 #include "mpi.hpp"
 
@@ -50,7 +51,8 @@ int main(int argc, char* argv[]) {
             }
 
             std::string input_file = argv[2];
-            std::string output_file = input_file + "_mpi_output.bin";
+            std::filesystem::path input_path(input_file);
+            std::string output_file = input_path.stem().string() + "_mpi_output" + input_path.extension().string();
 
             size_t memory_budget_mb = (argc >= 4) ? std::stoull(argv[3]) : 256;
             size_t memory_budget = memory_budget_mb * 1024 * 1024;
