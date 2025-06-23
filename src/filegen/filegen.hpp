@@ -3,11 +3,10 @@
 
 #include <string>
 
-// === Helper struct to generate binary test files with records ===
 class FileGenerator {
 public:
-    void generateFile(const std::string& filename, size_t num_records);
-    void generateFileBySize(const std::string& filename, size_t target_size_bytes);
+    void generateFile(const std::string& filename, size_t num_records, uint32_t payload_len = 100);
+    void generateFileBySize(const std::string& filename, size_t target_size_bytes, uint32_t payload_len = 100);
 };
 
 bool verify_sorted_output(const std::string& filename);

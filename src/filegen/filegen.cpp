@@ -17,7 +17,12 @@
  * @param filename The file to generate
  * @param num_records The number of records to generate
  */
-void FileGenerator::generateFile(const std::string& filename, size_t num_records) {
+void FileGenerator::generateFile(const std::string& filename, size_t num_records, uint32_t payload_len) {
+    if (payload_len < 8 || payload_len > PAYLOAD_MAX) {
+        std::cerr << "Invalid payload size: must be between 8 and " << PAYLOAD_MAX << "\n";
+        return;
+    }
+
     std::ofstream file(filename, std::ios::binary);
     if (!file) {
         std::cerr << "Failed to create file: " << filename << std::endl;
@@ -26,11 +31,10 @@ void FileGenerator::generateFile(const std::string& filename, size_t num_records
 
     for (size_t i = 0; i < num_records; ++i) {
         uint64_t key = rand(); // Random key for sorting
-        uint32_t len = 100; // Fixed payload size
-        std::vector<char> data(len);
+        std::vector<char> data(payload_len);
         
         // Fill payload with random letters A-Z
-        for (uint32_t j = 0; j < len; ++j) {
+        for (uint32_t j = 0; j < payload_len; ++j) {
             data[j] = 'A' + (rand() % 26);
         }
 
@@ -50,7 +54,12 @@ void FileGenerator::generateFile(const std::string& filename, size_t num_records
  * @param filename The name of the file to be generated
  * @param target_size_bytes The approximate target size of the generated file in bytes
  */
-void FileGenerator::generateFileBySize(const std::string& filename, size_t target_size_bytes) {
+void FileGenerator::generateFileBySize(const std::string& filename, size_t target_size_bytes, uint32_t payload_len) {
+    if (payload_len < 8 || payload_len > PAYLOAD_MAX) {
+        std::cerr << "Invalid payload size: must be between 8 and " << PAYLOAD_MAX << "\n";
+        return;
+    }
+    
     // Open the file in binary mode for writing
     std::ofstream file(filename, std::ios::binary);
     if (!file) {
@@ -64,11 +73,10 @@ void FileGenerator::generateFileBySize(const std::string& filename, size_t targe
     // Continue writing records to the file until the target size is reached
     while (written < target_size_bytes) {
         uint64_t key = rand();
-        uint32_t len = 100;
-        std::vector<char> data(len);
+        std::vector<char> data(payload_len);
         
         // Fill the payload with random uppercase letters
-        for (uint32_t j = 0; j < len; ++j) {
+        for (uint32_t j = 0; j < payload_len; ++j) {
             data[j] = 'A' + (rand() % 26);
         }
 

@@ -2,11 +2,12 @@
 #include <string>
 #include <cstdlib>
 #include "filegen.hpp"
+#include <cstdint>
 
 void print_usage(const std::string& prog) {
     std::cout << "Usage:\n";
-    std::cout << "  " << prog << " gen_count <filename> <num_records>\n";
-    std::cout << "  " << prog << " gen_size  <filename> <size_in_MB>\n";
+    std::cout << "  " << prog << " gen_count <filename> <num_records> <payload_len>\n";
+    std::cout << "  " << prog << " gen_size  <filename> <size_in_MB> <payload_len>\n";
     std::cout << "  " << prog << " verify    <filename>\n";
     std::cout << "  " << prog << " compare   <file1> <file2>\n";
     std::cout << "  " << prog << " delete    <filename>\n";
@@ -22,25 +23,29 @@ int main(int argc, char* argv[]) {
     FileGenerator gen;
 
     if (cmd == "gen_count") {
-        if (argc != 4) {
+        if (argc < 4 || argc > 5) {
             print_usage(argv[0]);
             return 1;
         }
         std::string filename = argv[2];
         size_t num_records = std::stoull(argv[3]);
-        gen.generateFile(filename, num_records);
-        std::cout << "Generated file: " << filename << " with " << num_records << " records\n";
+        uint32_t payload_len = (argc == 5) ? std::stoul(argv[4]) : 100;
+        gen.generateFile(filename, num_records, payload_len);
+        std::cout << "Generated file: " << filename << " with " << num_records
+                << " records (payload_len = " << payload_len << ")\n";
     }
 
     else if (cmd == "gen_size") {
-        if (argc != 4) {
+        if (argc < 4 || argc > 5) {
             print_usage(argv[0]);
             return 1;
         }
         std::string filename = argv[2];
         size_t size_mb = std::stoull(argv[3]);
-        gen.generateFileBySize(filename, size_mb * 1024 * 1024);
-        std::cout << "Generated file: " << filename << " (~" << size_mb << " MB)\n";
+        uint32_t payload_len = (argc == 5) ? std::stoul(argv[4]) : 100;
+        gen.generateFileBySize(filename, size_mb * 1024 * 1024, payload_len);
+        std::cout << "Generated file: " << filename << " (~" << size_mb
+                << " MB, payload_len = " << payload_len << ")\n";
     }
 
     else if (cmd == "verify") {
