@@ -1,11 +1,11 @@
 #!/bin/bash
 
-INPUT="data/data_10M_p64.bin"
+INPUT="data/data_50M_p64.bin"
 MEMORY=256  # MB
 THREADS=(1 2 4 8 16)
 
 # Output file for results
-RESULTS_FILE="omp_results_10M_p64.csv"
+RESULTS_FILE="omp_results_50M_p64.csv"
 
 # CSV header
 echo "Filename,Threads,Time(s)" > $RESULTS_FILE
