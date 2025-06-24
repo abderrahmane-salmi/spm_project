@@ -1,0 +1,6 @@
+Filename,Threads,Time(s)
+data/data_50M_p512.bin,1,544.007
+data/data_50M_p512.bin,2,479.945
+data/data_50M_p512.bin,4,432.624
+data/data_50M_p512.bin,8,365.817
+data/data_50M_p512.bin,16,455.409

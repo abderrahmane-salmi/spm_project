@@ -1,6 +1,6 @@
 Filename,Threads,Time(s)
-,,29.0439
-,,25.6932
-,,23.4386
-,,23.5237
-,,22.7958
+data/data_10M_p64.bin,1,29.0439
+data/data_10M_p64.bin,2,25.6932
+data/data_10M_p64.bin,4,23.4386
+data/data_10M_p64.bin,8,23.5237
+data/data_10M_p64.bin,16,22.7958
