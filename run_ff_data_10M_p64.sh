@@ -11,7 +11,7 @@ echo "Filename,Workers,Time(s)" > $RESULTS_FILE
 for W in "${WORKERS[@]}"; do
     echo "Running FastFlow with $W workers on $INPUT"
 
-    output=$(./fastflow_mergesort benchmark "$INPUT" "$MEMORY" "$W" | tail -n 1)
+    output=$(./ff_mergesort benchmark "$INPUT" "$MEMORY" "$W" | tail -n 1)
     time=$(echo "$output" | grep -oP 'Time=\K[0-9.]+' )
 
     echo "$INPUT,$W,$time" >> $RESULTS_FILE
