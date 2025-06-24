@@ -33,7 +33,7 @@ INCLUDES = -I$(INCLUDE_DIR)
 
 .PHONY: all clean openmp fastflow mpi filegen test quick-test perf-test test_mpi
 
-all: openmp fastflow filegen
+all: openmp fastflow mpi filegen
 
 # Build OpenMP binary
 openmp: $(OMP_BIN)
