@@ -1,0 +1,6 @@
+Filename,Workers,Time(s)
+data/data_50M_p512.bin,1,347.007
+data/data_50M_p512.bin,2,330.324
+data/data_50M_p512.bin,4,268.329
+data/data_50M_p512.bin,8,337.113
+data/data_50M_p512.bin,16,327.015

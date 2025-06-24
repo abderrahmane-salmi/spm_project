@@ -1,0 +1,6 @@
+Filename,Workers,Time(s)
+data/data_10M_p64.bin,1,27.3939
+data/data_10M_p64.bin,2,27.7815
+data/data_10M_p64.bin,4,19.7917
+data/data_10M_p64.bin,8,22.0375
+data/data_10M_p64.bin,16,21.1535
