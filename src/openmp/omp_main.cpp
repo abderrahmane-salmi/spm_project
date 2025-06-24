@@ -169,6 +169,28 @@ int main(int argc, char* argv[]) {
         // this line deletes the output file, use it only when needed
         // if (std::filesystem::exists(output_file)) std::filesystem::remove(output_file);
     }
+    else if (command == "benchmark") {
+        size_t memory_mb = (argc >= 4) ? std::stoul(argv[3]) : 256;
+        size_t memory_bytes = memory_mb * 1024 * 1024;
+        int threads = (argc >= 5) ? std::stoi(argv[4]) : 4;
+
+        std::filesystem::path input_path(input_file);
+        std::string output_file = input_path.stem().string() + "_omp_output" + input_path.extension().string();
+
+        OpenMPExternalMergeSort sorter(memory_bytes, threads);
+
+        auto start = std::chrono::high_resolution_clock::now();
+        bool success = sorter.sort_file(input_file, output_file);
+        auto end = std::chrono::high_resolution_clock::now();
+
+        double duration = std::chrono::duration<double>(end - start).count();
+
+        // Output only performance data for CSV
+        std::cout << threads << "," << duration << std::endl;
+
+        // Optionally: remove output file to keep disk clean
+        if (std::filesystem::exists(output_file)) std::filesystem::remove(output_file);
+    }
     else if (command == "performance") {
         performance_test(input_file);
     }
