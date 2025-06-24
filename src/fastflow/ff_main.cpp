@@ -27,75 +27,6 @@ void print_usage(const std::string& exe_name) {
     std::cout << "  " << exe_name << " sort data.bin 512 8\n\n";
 }
 
-void performance_test(const std::string& input_file) {
-    std::cout << "\n=== FastFlow Performance Test ===" << std::endl;
-    std::cout << "Input file: " << input_file << std::endl;
-    
-    std::vector<int> worker_counts = {1, 2, 4, 8, 16};
-    const size_t memory_budget = 256 * 1024 * 1024; // 256MB
-    
-    for (int workers : worker_counts) {
-        std::string output_file = "output_ff_" + std::to_string(workers) + "_workers.bin";
-        
-        std::cout << "\nTesting with " << workers << " workers..." << std::endl;
-        
-        auto start = std::chrono::high_resolution_clock::now();
-        
-        FastFlowExternalMergeSort sorter(memory_budget, workers);
-        sorter.sort_file(input_file, output_file);
-        
-        auto end = std::chrono::high_resolution_clock::now();
-        auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
-        
-        // Verify correctness
-        bool is_sorted = verify_sorted_output(output_file);
-        
-        std::cout << "Time: " << duration.count() << " ms" << std::endl;
-        std::cout << "Correctness: " << (is_sorted ? "PASS" : "FAIL") << std::endl;
-        
-        // Clean up output file
-        fs::remove(output_file);
-    }
-}
-
-void memory_budget_test(const std::string& input_file) {
-    std::cout << "\n=== FastFlow Memory Budget Test ===" << std::endl;
-    std::cout << "Input file: " << input_file << std::endl;
-    
-    std::vector<size_t> memory_budgets = {
-        64 * 1024 * 1024,   // 64MB
-        128 * 1024 * 1024,  // 128MB
-        256 * 1024 * 1024,  // 256MB
-        512 * 1024 * 1024,  // 512MB
-        1024 * 1024 * 1024  // 1GB
-    };
-    
-    const int workers = 4;
-    
-    for (size_t budget : memory_budgets) {
-        std::string output_file = "output_ff_" + std::to_string(budget / 1024 / 1024) + "MB.bin";
-        
-        std::cout << "\nTesting with " << (budget / 1024 / 1024) << " MB memory budget..." << std::endl;
-        
-        auto start = std::chrono::high_resolution_clock::now();
-        
-        FastFlowExternalMergeSort sorter(budget, workers);
-        sorter.sort_file(input_file, output_file);
-        
-        auto end = std::chrono::high_resolution_clock::now();
-        auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
-        
-        // Verify correctness
-        bool is_sorted = verify_sorted_output(output_file);
-        
-        std::cout << "Time: " << duration.count() << " ms" << std::endl;
-        std::cout << "Correctness: " << (is_sorted ? "PASS" : "FAIL") << std::endl;
-        
-        // Clean up output file
-        fs::remove(output_file);
-    }
-}
-
 int main(int argc, char* argv[]) {
     print_usage(argv[0]);
 
@@ -143,7 +74,35 @@ int main(int argc, char* argv[]) {
 
         // this line deletes the output file, use it only when needed
         // if (std::filesystem::exists(output_file)) std::filesystem::remove(output_file);
-    } else {
+    } else if (command == "benchmark") {
+        std::string input_file = argv[2];
+        if (!fs::exists(input_file)) {
+            std::cerr << "Error: Input file does not exist.\n";
+            return 1;
+        }
+
+        size_t memory_mb = (argc >= 4) ? std::stoul(argv[3]) : 256;
+        size_t memory_bytes = memory_mb * 1024 * 1024;
+        int workers = (argc >= 5) ? std::stoi(argv[4]) : 4;
+
+        fs::path input_path(input_file);
+        std::string output_file = input_path.stem().string() + "_ff_output" + input_path.extension().string();
+
+        FastFlowExternalMergeSort sorter(memory_bytes, workers);
+
+        auto start = std::chrono::high_resolution_clock::now();
+        sorter.sort_file(input_file, output_file);
+        auto end = std::chrono::high_resolution_clock::now();
+
+        double duration = std::chrono::duration<double>(end - start).count();
+
+        if (fs::exists(output_file)) fs::remove(output_file);
+
+        // Output only performance data (compatible with bash parsing)
+        std::cout << "[FF] Workers=" << workers
+                << " Time=" << duration << std::endl;
+    } 
+    else {
         std::cerr << "Unknown command: " << command << std::endl;
         print_usage(argv[0]);
         return 1;
