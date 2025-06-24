@@ -185,11 +185,13 @@ int main(int argc, char* argv[]) {
 
         double duration = std::chrono::duration<double>(end - start).count();
 
-        // Output only performance data for CSV
-        std::cout << threads << "," << duration << std::endl;
-
         // Optionally: remove output file to keep disk clean
         if (std::filesystem::exists(output_file)) std::filesystem::remove(output_file);
+
+        // Output only performance data for CSV
+        std::cout << "[OMP] Threads=" << threads
+                  << " Time=" << duration << std::endl;
+        // std::cout << threads << "," << duration << std::endl;
     }
     else if (command == "performance") {
         performance_test(input_file);
