@@ -1,0 +1,1 @@
+./run_mpi_data_50M_p512.sh: line 15: srun: command not found

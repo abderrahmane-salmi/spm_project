@@ -1,0 +1,3 @@
+nohup: ignoring input
+Running MPI with 4 procs and 4 threads on data/data_50M_p512.bin
+❌ Error: No time recorded. Check mpi_error_p4.log
