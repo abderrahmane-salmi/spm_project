@@ -1,18 +1,15 @@
 #!/bin/bash
 
-INPUT="data/data_10M_p512.bin"
-MEMORY=512
+INPUT=data/data_50M_p512.bin
+MEM_BUDGET=256
 THREADS=4
-PROCS=(1 2 4 8)
+RESULTS=mpi_results_50M_p512.csv
 
-RESULTS_FILE="mpi_results_10M_p512.csv"
-echo "Filename,MPI_Procs,OMP_Threads,Time(s)" > $RESULTS_FILE
+echo "Filename,MPI_Procs,OMP_Threads,Time(s)" > $RESULTS
 
-for P in "${PROCS[@]}"; do
-    echo "Running MPI with $P procs and $THREADS threads on $INPUT"
-    output=$(mpirun -np $P ./mpi_mergesort benchmark "$INPUT" "$MEMORY" "$THREADS" | tail -n 1)
-    time=$(echo "$output" | grep -oP 'Time=\K[0-9.]+')
-    echo "$INPUT,$P,$THREADS,$time" >> $RESULTS_FILE
+for procs in 1 2 4 8; do
+    echo "Running MPI with $procs procs and $THREADS threads on $INPUT"
+    mpirun -np $procs ./mpi_mergesort benchmark $INPUT $MEM_BUDGET $THREADS 2> mpi_error_p${procs}.log | tee -a $RESULTS
 done
 
-echo "Done. Results in $RESULTS_FILE"
+echo "Done. Results in $RESULTS"
