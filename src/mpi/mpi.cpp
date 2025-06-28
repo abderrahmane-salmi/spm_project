@@ -80,13 +80,13 @@ void mpi_sort_file(
     omp_sorter.sort_file(local_input_file, local_sorted_file);
 
     // Load sorted records back into memory
-    local_records.clear();
-    std::ifstream ifs(local_sorted_file, std::ios::binary);
-    Record rec;
-    while (rec.read_from_stream(ifs)) {
-        local_records.push_back(rec);
-    }
-    ifs.close();
+    // local_records.clear();
+    // std::ifstream ifs(local_sorted_file, std::ios::binary);
+    // Record rec;
+    // while (rec.read_from_stream(ifs)) {
+    //     local_records.push_back(rec);
+    // }
+    // ifs.close();
     
     auto sort_end = std::chrono::high_resolution_clock::now();
     auto sort_duration = std::chrono::duration_cast<std::chrono::milliseconds>(sort_end - sort_start);
@@ -95,7 +95,7 @@ void mpi_sort_file(
               << sort_duration.count() << " ms" << std::endl;
     
     // Step 4: Distributed merge phase
-    distributed_merge(local_records, output_file, rank, size);
+    distributed_merge(local_sorted_file, output_file, rank, size);
     
     // Cleanup rank-specific temp directory
     std::filesystem::remove_all(rank_temp_dir);
@@ -267,11 +267,21 @@ void read_records_from_range(
  * @param size Total number of MPI processes
  */
 void distributed_merge(
-    std::vector<Record>& local_records,
+    const std::string& local_sorted_file,
     const std::string& output_file,
     int rank,
     int size
 ) {
+    // Step 0: Load sorted records from disk
+    std::vector<Record> local_records;
+    std::ifstream ifs(local_sorted_file, std::ios::binary);
+    Record rec;
+    while (rec.read_from_stream(ifs)) {
+        local_records.push_back(rec);
+    }
+    ifs.close();
+
+
     // Sample Sort approach for distributed merge
     
     // Step 1: Sample local data
