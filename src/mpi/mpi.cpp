@@ -394,13 +394,17 @@ void distributed_merge(
     std::ofstream out(rank_out, std::ios::binary);
     size_t pos = 0;
     while (pos < recv_all.size()) {
-        auto [recs, consumed] = deserialize_records_with_offset(
-            std::vector<char>(recv_all.begin() + pos, recv_all.end())
-        );
+        std::vector<char> subbuf(recv_all.begin() + pos, recv_all.end());
+        auto [recs, consumed] = deserialize_records_with_offset(subbuf);
 
-        if (consumed == 0) break;  // prevent infinite loop
+        if (consumed == 0) {
+            std::cerr << "Rank " << rank << " warning: zero bytes consumed at pos=" << pos << "\n";
+            break;  // Prevent infinite loop
+        }
 
-        for (auto& rec : recs) rec.write_to_stream(out);
+        for (auto& rec : recs)
+            rec.write_to_stream(out);
+
         pos += consumed;
     }
 
