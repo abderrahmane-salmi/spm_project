@@ -98,10 +98,20 @@ std::vector<uint64_t> sample_sorted_file(const std::string& sorted_file, size_t 
     std::vector<uint64_t> samples;
     std::ifstream file(sorted_file, std::ios::binary);
     
+    if (!file.good()) {
+        std::cerr << "Warning: Cannot open sorted file " << sorted_file << " for sampling" << std::endl;
+        return samples;
+    }
+    
     // Get file size
     file.seekg(0, std::ios::end);
     size_t file_size = file.tellg();
     file.seekg(0);
+    
+    if (file_size == 0) return samples;
+    
+    // Limit number of samples to prevent excessive memory usage
+    num_samples = std::min(num_samples, file_size / sizeof(Record));
     
     // Sample at regular intervals
     for (size_t i = 0; i < num_samples; ++i) {
@@ -110,15 +120,20 @@ std::vector<uint64_t> sample_sorted_file(const std::string& sorted_file, size_t 
         
         // Find next complete record
         Record record;
-        while (file.tellg() < file_size) {
+        size_t attempts = 0;
+        while (file.tellg() < file_size && attempts < 1000) {
             size_t pos = file.tellg();
-            if (record.read_from_stream(file)) {
-                samples.push_back(record.key);
-                break;
-            } else {
-                file.clear();
-                file.seekg(pos + 1);
+            try {
+                if (record.read_from_stream(file)) {
+                    samples.push_back(record.key);
+                    break;
+                }
+            } catch (...) {
+                // Continue searching
             }
+            file.clear();
+            file.seekg(pos + 1);
+            attempts++;
         }
     }
     
@@ -333,17 +348,23 @@ void distributed_merge(
     }
     MPI_Bcast(splitters.data(), size - 1, MPI_UINT64_T, 0, MPI_COMM_WORLD);
 
-    // 3. Stream local_sorted_file chunk by chunk,
-    //    partitioning records into size streams
+    // 3. Stream local_sorted_file in smaller chunks to avoid memory issues
     std::vector<std::vector<char>> send_bufs(size);
     std::vector<int> send_counts(size, 0);
 
     std::ifstream in(local_sorted_file, std::ios::binary);
+    if (!in.good()) {
+        std::cerr << "Rank " << rank << " error: cannot open " << local_sorted_file << std::endl;
+        MPI_Abort(MPI_COMM_WORLD, 1);
+        return;
+    }
+    
     in.seekg(0, std::ios::end);
     size_t fsize = in.tellg();
     in.seekg(0);
 
-    const size_t CHUNK = memory_budget / 4; // e.g. streaming buffer per chunk
+    // Use smaller chunks to avoid memory pressure
+    const size_t CHUNK = std::min(memory_budget / 8, size_t(1024 * 1024)); // Max 1MB chunks
     size_t processed = 0;
 
     while (processed < fsize && in.good()) {
@@ -351,19 +372,42 @@ void distributed_merge(
         std::vector<char> chunk_buf(to_read);
         in.read(chunk_buf.data(), to_read);
         size_t got = in.gcount();
+        if (got == 0) break;
         processed += got;
 
-        auto [recs, used_bytes] = deserialize_records_with_offset(chunk_buf);
-        for (auto& rec : recs) {
+        // Process records one by one instead of batch deserialization
+        size_t chunk_pos = 0;
+        while (chunk_pos < got) {
+            Record rec;
+            if (chunk_pos + sizeof(rec.key) > got) break;
+            std::memcpy(&rec.key, chunk_buf.data() + chunk_pos, sizeof(rec.key));
+            chunk_pos += sizeof(rec.key);
+            
+            if (chunk_pos + sizeof(rec.len) > got) break;
+            std::memcpy(&rec.len, chunk_buf.data() + chunk_pos, sizeof(rec.len));
+            chunk_pos += sizeof(rec.len);
+            
+            if (rec.len > 1024 * 1024 || chunk_pos + rec.len > got) break;
+            rec.payload.resize(rec.len);
+            std::memcpy(rec.payload.data(), chunk_buf.data() + chunk_pos, rec.len);
+            chunk_pos += rec.len;
+            
+            // Determine destination
             int dst = size - 1;
             for (int d = 0; d < size - 1; ++d) {
                 if (rec.key <= splitters[d]) { dst = d; break; }
             }
-            std::vector<char>& dst_buf = send_bufs[dst];
-            size_t prev = dst_buf.size();
-            auto tmp = serialize_records({rec}); // individual record
-            dst_buf.insert(dst_buf.end(), tmp.begin(), tmp.end());
-            send_counts[dst] = dst_buf.size();
+            
+            // Serialize individual record
+            std::vector<char> rec_data;
+            rec_data.insert(rec_data.end(), reinterpret_cast<const char*>(&rec.key), 
+                           reinterpret_cast<const char*>(&rec.key) + sizeof(rec.key));
+            rec_data.insert(rec_data.end(), reinterpret_cast<const char*>(&rec.len), 
+                           reinterpret_cast<const char*>(&rec.len) + sizeof(rec.len));
+            rec_data.insert(rec_data.end(), rec.payload.begin(), rec.payload.end());
+            
+            send_bufs[dst].insert(send_bufs[dst].end(), rec_data.begin(), rec_data.end());
+            send_counts[dst] = send_bufs[dst].size();
         }
     }
     in.close();
@@ -383,30 +427,40 @@ void distributed_merge(
     }
 
     std::vector<char> send_all;
-    for (auto& v : send_bufs) send_all.insert(send_all.end(), v.begin(), v.end());
+    send_all.reserve(total_send);
+    for (auto& v : send_bufs) {
+        send_all.insert(send_all.end(), v.begin(), v.end());
+        v.clear(); // Free memory immediately
+    }
 
     std::vector<char> recv_all(total_recv);
     MPI_Alltoallv(send_all.data(), send_counts.data(), send_displs.data(), MPI_CHAR,
                   recv_all.data(), recv_counts.data(), recv_displs.data(), MPI_CHAR, MPI_COMM_WORLD);
 
-    // 6. Stream-deserialize received buffer and write sorted output file
+    // 6. Process received data record by record to avoid large vector allocations
     std::string rank_out = output_file + "_rank_" + std::to_string(rank);
     std::ofstream out(rank_out, std::ios::binary);
+    
     size_t pos = 0;
     while (pos < recv_all.size()) {
-        std::vector<char> subbuf(recv_all.begin() + pos, recv_all.end());
-        auto [recs, consumed] = deserialize_records_with_offset(subbuf);
-
-        if (consumed == 0) {
-            std::cerr << "Rank " << rank << " warning: zero bytes consumed at pos=" << pos << "\n";
-            break;  // Prevent infinite loop
-        }
-
-        for (auto& rec : recs)
-            rec.write_to_stream(out);
-
-        pos += consumed;
+        Record rec;
+        
+        if (pos + sizeof(rec.key) > recv_all.size()) break;
+        std::memcpy(&rec.key, recv_all.data() + pos, sizeof(rec.key));
+        pos += sizeof(rec.key);
+        
+        if (pos + sizeof(rec.len) > recv_all.size()) break;
+        std::memcpy(&rec.len, recv_all.data() + pos, sizeof(rec.len));
+        pos += sizeof(rec.len);
+        
+        if (rec.len > 1024 * 1024 || pos + rec.len > recv_all.size()) break;
+        rec.payload.resize(rec.len);
+        std::memcpy(rec.payload.data(), recv_all.data() + pos, rec.len);
+        pos += rec.len;
+        
+        rec.write_to_stream(out);
     }
+    out.close();
 
     MPI_Barrier(MPI_COMM_WORLD);
 
@@ -414,10 +468,13 @@ void distributed_merge(
     if (rank == 0) {
         std::ofstream final_out(output_file, std::ios::binary);
         for (int i = 0; i < size; i++) {
-            std::ifstream in_r(output_file + "_rank_" + std::to_string(i), std::ios::binary);
-            final_out << in_r.rdbuf();
+            std::string rank_file = output_file + "_rank_" + std::to_string(i);
+            std::ifstream in_r(rank_file, std::ios::binary);
+            if (in_r.good()) {
+                final_out << in_r.rdbuf();
+            }
             in_r.close();
-            std::filesystem::remove(output_file + "_rank_" + std::to_string(i));
+            std::filesystem::remove(rank_file);
         }
         final_out.close();
     }
@@ -481,7 +538,36 @@ std::pair<std::vector<Record>, size_t> deserialize_records_with_offset(const std
     std::memcpy(&count, buffer.data(), sizeof(count));
     pos += sizeof(count);
 
-    records.reserve(count);
+    // FIX: Add validation for count to prevent excessive memory allocation
+    if (count == 0 || count > 1000000) {  // Reasonable upper limit
+        // If count is suspicious, try to parse records without the count header
+        pos = 0;  // Reset position
+        while (pos < buffer.size()) {
+            Record record;
+            
+            if (pos + sizeof(record.key) > buffer.size()) break;
+            std::memcpy(&record.key, buffer.data() + pos, sizeof(record.key));
+            pos += sizeof(record.key);
+
+            if (pos + sizeof(record.len) > buffer.size()) break;
+            std::memcpy(&record.len, buffer.data() + pos, sizeof(record.len));
+            pos += sizeof(record.len);
+
+            // Validate record length
+            if (record.len > 1024 * 1024 || pos + record.len > buffer.size()) break;
+            
+            record.payload.resize(record.len);
+            std::memcpy(record.payload.data(), buffer.data() + pos, record.len);
+            pos += record.len;
+
+            records.push_back(record);
+        }
+        return {records, pos};
+    }
+
+    // Use a more conservative reservation strategy
+    size_t safe_reserve = std::min(count, buffer.size() / 16);  // Conservative estimate
+    records.reserve(safe_reserve);
     
     for (size_t i = 0; i < count && pos < buffer.size(); ++i) {
         Record record;
@@ -494,7 +580,9 @@ std::pair<std::vector<Record>, size_t> deserialize_records_with_offset(const std
         std::memcpy(&record.len, buffer.data() + pos, sizeof(record.len));
         pos += sizeof(record.len);
 
-        if (pos + record.len > buffer.size()) break;
+        // Validate record length
+        if (record.len > 1024 * 1024 || pos + record.len > buffer.size()) break;
+        
         record.payload.resize(record.len);
         std::memcpy(record.payload.data(), buffer.data() + pos, record.len);
         pos += record.len;
