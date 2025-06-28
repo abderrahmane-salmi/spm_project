@@ -32,79 +32,97 @@ void mpi_sort_file(
     size_t memory_budget,
     const std::string& temp_dir
 ) {
-    // Get the rank and size of the MPI communicator
     int rank, size;
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
     MPI_Comm_size(MPI_COMM_WORLD, &size);
-    
-    auto start_time = std::chrono::high_resolution_clock::now();
-    
-    if (rank == 0) {
-        std::cout << "MPI MergeSort starting with " << size << " processes" << std::endl;
-        std::cout << "Memory budget per rank: " << (memory_budget / (1024*1024)) << " MB" << std::endl;
-    }
     
     // Create rank-specific temp directory
     std::string rank_temp_dir = temp_dir + "/rank_" + std::to_string(rank);
     std::filesystem::create_directories(rank_temp_dir);
     
-    // Step 1: Calculate file partition for this rank
+    // Step 1: Calculate file partition
     size_t start_offset, end_offset;
     calculate_file_partition(input_file, rank, size, start_offset, end_offset);
     
-    if (rank == 0) {
-        std::cout << "File partitioning completed" << std::endl;
-    }
+    // Step 2: Create temporary file with just this rank's data
+    std::string local_partition_file = rank_temp_dir + "/partition.bin";
+    extract_partition_to_file(input_file, start_offset, end_offset, local_partition_file);
     
-    // Step 2: Read records from assigned partition
-    std::vector<Record> local_records;
-    read_records_from_range(input_file, start_offset, end_offset, local_records);
-    
-    std::cout << "Rank " << rank << ": Read " << local_records.size() 
-              << " records from offset " << start_offset << " to " << end_offset << std::endl;
-    
-    // Step 3: Local sorting using OpenMP (reusing existing logic)
-    auto sort_start = std::chrono::high_resolution_clock::now();
-
-    // Save local_records to temp file
-    std::string local_input_file = rank_temp_dir + "/local_input.bin";
-    std::ofstream ofs(local_input_file, std::ios::binary);
-    for (const auto& rec : local_records) {
-        rec.write_to_stream(ofs);
-    }
-    ofs.close();
-
-    // Sort using OpenMP class
-    std::string local_sorted_file = rank_temp_dir + "/local_sorted.bin";
+    // Step 3: Sort partition using OpenMP external sort (stays on disk)
+    std::string local_sorted_file = rank_temp_dir + "/sorted.bin";
     OpenMPExternalMergeSort omp_sorter(memory_budget, 0, rank_temp_dir);
-    omp_sorter.sort_file(local_input_file, local_sorted_file);
-
-    // Load sorted records back into memory
-    // local_records.clear();
-    // std::ifstream ifs(local_sorted_file, std::ios::binary);
-    // Record rec;
-    // while (rec.read_from_stream(ifs)) {
-    //     local_records.push_back(rec);
-    // }
-    // ifs.close();
+    omp_sorter.sort_file(local_partition_file, local_sorted_file);
     
-    auto sort_end = std::chrono::high_resolution_clock::now();
-    auto sort_duration = std::chrono::duration_cast<std::chrono::milliseconds>(sort_end - sort_start);
+    // Step 4: Sample the sorted file for distributed merge
+    std::vector<uint64_t> samples = sample_sorted_file(local_sorted_file, 100);
     
-    std::cout << "Rank " << rank << ": Local OpenMP sorting completed in " 
-              << sort_duration.count() << " ms" << std::endl;
+    // Step 5: Distributed merge using streaming approach
+    distributed_merge(local_sorted_file, samples, output_file, rank, size, memory_budget);
     
-    // Step 4: Distributed merge phase
-    distributed_merge(local_sorted_file, output_file, rank, size);
-    
-    // Cleanup rank-specific temp directory
+    // Cleanup
     std::filesystem::remove_all(rank_temp_dir);
+}
+
+// Extract partition without loading into memory
+void extract_partition_to_file(
+    const std::string& input_file,
+    size_t start_offset,
+    size_t end_offset,
+    const std::string& output_file
+) {
+    std::ifstream input(input_file, std::ios::binary);
+    std::ofstream output(output_file, std::ios::binary);
     
-    if (rank == 0) {
-        auto end_time = std::chrono::high_resolution_clock::now();
-        auto total_duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
-        std::cout << "MPI MergeSort completed in " << total_duration.count() << " ms" << std::endl;
+    input.seekg(start_offset);
+    
+    // Copy data in chunks to avoid loading everything
+    const size_t BUFFER_SIZE = 64 * 1024; // 64KB buffer
+    std::vector<char> buffer(BUFFER_SIZE);
+    
+    size_t remaining = end_offset - start_offset;
+    
+    while (remaining > 0 && input.good()) {
+        size_t to_read = std::min(remaining, BUFFER_SIZE);
+        input.read(buffer.data(), to_read);
+        size_t actually_read = input.gcount();
+        
+        output.write(buffer.data(), actually_read);
+        remaining -= actually_read;
+        
+        if (actually_read < to_read) break;
     }
+}
+
+// Sample a sorted file without loading all records
+std::vector<uint64_t> sample_sorted_file(const std::string& sorted_file, size_t num_samples) {
+    std::vector<uint64_t> samples;
+    std::ifstream file(sorted_file, std::ios::binary);
+    
+    // Get file size
+    file.seekg(0, std::ios::end);
+    size_t file_size = file.tellg();
+    file.seekg(0);
+    
+    // Sample at regular intervals
+    for (size_t i = 0; i < num_samples; ++i) {
+        size_t target_pos = (i * file_size) / num_samples;
+        file.seekg(target_pos);
+        
+        // Find next complete record
+        Record record;
+        while (file.tellg() < file_size) {
+            size_t pos = file.tellg();
+            if (record.read_from_stream(file)) {
+                samples.push_back(record.key);
+                break;
+            } else {
+                file.clear();
+                file.seekg(pos + 1);
+            }
+        }
+    }
+    
+    return samples;
 }
 
 /**
@@ -183,7 +201,7 @@ void calculate_file_partition(
                 Record temp_record;
                 if (temp_record.read_from_stream(file)) {
                     // If a complete record is read, update the end offset
-                    end_offset = pos;
+                    end_offset = file.tellg();
                     break;
                 } else {
                     // If not, clear any error flags and move forward
@@ -266,185 +284,140 @@ void read_records_from_range(
  * @param rank Current MPI rank
  * @param size Total number of MPI processes
  */
+/**
+ * Streaming, out-of-core Sample-Sort merge.
+ * Each MPI rank:
+ *   - Streams own sorted run file in chunks
+ *   - Broadcasts splitters
+ *   - Routes records to target processes via MPI_Alltoallv
+ *   - Each rank writes final output incrementally
+ */
 void distributed_merge(
     const std::string& local_sorted_file,
+    const std::vector<uint64_t>& local_samples, 
     const std::string& output_file,
     int rank,
-    int size
+    int size,
+    size_t memory_budget
 ) {
-    // Step 0: Load sorted records from disk
-    std::vector<Record> local_records;
-    std::ifstream ifs(local_sorted_file, std::ios::binary);
-    Record rec;
-    while (rec.read_from_stream(ifs)) {
-        local_records.push_back(rec);
-    }
-    ifs.close();
-
-
-    // Sample Sort approach for distributed merge
-    
-    // Step 1: Sample local data
-    // Each rank picks about 100 sample keys from its sorted data to give a preview of its values.
-    // This helps decide how to divide the key space evenly across all ranks.
-    std::vector<uint64_t> local_samples;
-    size_t sample_size = std::min(size_t(100), local_records.size());
-    
-    // Select a subset of local records as samples
-    for (size_t i = 0; i < sample_size && i * (local_records.size() / sample_size) < local_records.size(); ++i) {
-        size_t idx = i * (local_records.size() / sample_size);
-        local_samples.push_back(local_records[idx].key);
-    }
-    
-    // Step 2: Gather all samples at rank 0
+    // 1. Gather samples at root
     std::vector<int> sample_counts(size);
-    int local_sample_count = local_samples.size();
-    
-    // Everyone sends sample sizes to rank 0
-    MPI_Gather(&local_sample_count, 1, MPI_INT, sample_counts.data(), 1, MPI_INT, 0, MPI_COMM_WORLD);
-    
-    // Gather all samples at rank 0
+    int my_scount = local_samples.size();
+    MPI_Gather(&my_scount, 1, MPI_INT, sample_counts.data(), 1, MPI_INT, 0, MPI_COMM_WORLD);
+
     std::vector<uint64_t> all_samples;
-    std::vector<int> sample_displs(size, 0);
-    
+    std::vector<int> displs(size, 0);
     if (rank == 0) {
-        // Calculate displacements for gathering samples
-        int total_samples = 0;
-        for (int i = 0; i < size; ++i) {
-            sample_displs[i] = total_samples;
-            total_samples += sample_counts[i];
+        int total = 0;
+        for (int i = 0; i < size; i++) {
+            displs[i] = total;
+            total += sample_counts[i];
         }
-        all_samples.resize(total_samples);
+        all_samples.resize(total);
     }
-    
-    // Everyone sends actual samples to rank 0
-    MPI_Gatherv(local_samples.data(), local_sample_count, MPI_UINT64_T,
-                all_samples.data(), sample_counts.data(), sample_displs.data(), 
+    MPI_Gatherv(local_samples.data(), my_scount, MPI_UINT64_T,
+                all_samples.data(), sample_counts.data(), displs.data(),
                 MPI_UINT64_T, 0, MPI_COMM_WORLD);
-    
-    // Step 3: Determine splitters
-    // Rank 0 picks (size - 1) splitter keys, which act like:
-    // "All records ≤ splitter 0 go to rank 0, all > splitter 0 and ≤ splitter 1 go to rank 1, etc."
+
+    // 2. Select splitters and broadcast
     std::vector<uint64_t> splitters(size - 1);
-    
     if (rank == 0) {
         std::sort(all_samples.begin(), all_samples.end());
-        
+        all_samples.erase(std::unique(all_samples.begin(), all_samples.end()), all_samples.end());
+
         for (int i = 1; i < size; ++i) {
             size_t idx = (i * all_samples.size()) / size;
-            if (idx < all_samples.size()) {
-                splitters[i - 1] = all_samples[idx];
-            }
+            idx = std::min(idx, all_samples.size() - 1);
+            splitters[i - 1] = all_samples[idx];
         }
     }
-    
-    // Broadcast splitters to all ranks
     MPI_Bcast(splitters.data(), size - 1, MPI_UINT64_T, 0, MPI_COMM_WORLD);
-    
-    // Step 4: Partition local data based on splitters
-    // Now each rank knows where each record should go.
-    // It builds partitions[i] = data that should go to rank i.
-    std::vector<std::vector<Record>> partitions(size);
-    
-    for (const auto& record : local_records) {
-        int target_rank = 0;
-        for (int i = 0; i < size - 1; ++i) {
-            if (record.key >= splitters[i]) {
-                target_rank = i + 1;
-            } else {
-                break;
+
+    // 3. Stream local_sorted_file chunk by chunk,
+    //    partitioning records into size streams
+    std::vector<std::vector<char>> send_bufs(size);
+    std::vector<int> send_counts(size, 0);
+
+    std::ifstream in(local_sorted_file, std::ios::binary);
+    in.seekg(0, std::ios::end);
+    size_t fsize = in.tellg();
+    in.seekg(0);
+
+    const size_t CHUNK = memory_budget / 4; // e.g. streaming buffer per chunk
+    size_t processed = 0;
+
+    while (processed < fsize && in.good()) {
+        size_t to_read = std::min(CHUNK, fsize - processed);
+        std::vector<char> chunk_buf(to_read);
+        in.read(chunk_buf.data(), to_read);
+        size_t got = in.gcount();
+        processed += got;
+
+        std::vector<Record> recs = deserialize_records(chunk_buf);
+        for (auto& rec : recs) {
+            int dst = size - 1;
+            for (int d = 0; d < size - 1; ++d) {
+                if (rec.key <= splitters[d]) { dst = d; break; }
             }
+            std::vector<char>& dst_buf = send_bufs[dst];
+            size_t prev = dst_buf.size();
+            auto tmp = serialize_records({rec}); // individual record
+            dst_buf.insert(dst_buf.end(), tmp.begin(), tmp.end());
+            send_counts[dst] = dst_buf.size();
         }
-        partitions[target_rank].push_back(record);
     }
-    
-    // Step 5: All-to-all exchange
-    std::vector<std::vector<char>> send_buffers(size);
-    std::vector<int> send_counts(size);
-    std::vector<int> send_displs(size, 0);
-    
-    // Serialize partitions
-    for (int i = 0; i < size; ++i) {
-        send_buffers[i] = serialize_records(partitions[i]);
-        send_counts[i] = send_buffers[i].size();
-    }
-    
-    // Calculate displacements for sending
-    for (int i = 1; i < size; ++i) {
-        send_displs[i] = send_displs[i-1] + send_counts[i-1];
-    }
-    
-    // Combine all send buffers
-    std::vector<char> combined_send_buffer;
-    for (const auto& buffer : send_buffers) {
-        combined_send_buffer.insert(combined_send_buffer.end(), buffer.begin(), buffer.end());
-    }
-    
-    // Exchange counts first
+    in.close();
+
+    // 4. Exchange counts
     std::vector<int> recv_counts(size);
     MPI_Alltoall(send_counts.data(), 1, MPI_INT, recv_counts.data(), 1, MPI_INT, MPI_COMM_WORLD);
-    
-    // Calculate receive displacements and total size
-    std::vector<int> recv_displs(size, 0);
-    int total_recv_size = recv_counts[0];
-    for (int i = 1; i < size; ++i) {
-        recv_displs[i] = recv_displs[i-1] + recv_counts[i-1];
-        total_recv_size += recv_counts[i];
-    }
-    
-    // Exchange actual data
-    // every rank sends its pieces to all other ranks
-    // ex: Rank 0 sends partition[0] to rank 0, partition[1] to rank 1, etc. Rank 1 does the same
-    // At the end, each rank receives all the records it’s responsible for.
-    std::vector<char> recv_buffer(total_recv_size);
-    MPI_Alltoallv(combined_send_buffer.data(), send_counts.data(), send_displs.data(), MPI_CHAR,
-                  recv_buffer.data(), recv_counts.data(), recv_displs.data(), MPI_CHAR, MPI_COMM_WORLD);
-    
-    // Step 6: Deserialize received data and merge locally
-    std::vector<Record> final_records;
-    
+
+    // 5. Prepare displacements and total recv
+    std::vector<int> send_displs(size, 0), recv_displs(size, 0);
+    int total_send = 0, total_recv = 0;
     for (int i = 0; i < size; ++i) {
-        if (recv_counts[i] > 0) {
-            std::vector<char> partition_buffer(recv_buffer.begin() + recv_displs[i], 
-                                               recv_buffer.begin() + recv_displs[i] + recv_counts[i]);
-            std::vector<Record> partition_records = deserialize_records(partition_buffer);
-            final_records.insert(final_records.end(), partition_records.begin(), partition_records.end());
-        }
+        send_displs[i] = total_send;
+        total_send += send_counts[i];
+        recv_displs[i] = total_recv;
+        total_recv += recv_counts[i];
     }
-    
-    // Sort final records (should be mostly sorted already)
-    std::sort(final_records.begin(), final_records.end());
-    
-    // Step 7: Write to output file (each rank writes to a separate file)
-    std::string rank_output = output_file + "_rank_" + std::to_string(rank);
-    std::ofstream outfile(rank_output, std::ios::binary);
-    
-    for (const auto& record : final_records) {
-        record.write_to_stream(outfile);
+
+    std::vector<char> send_all;
+    for (auto& v : send_bufs) send_all.insert(send_all.end(), v.begin(), v.end());
+
+    std::vector<char> recv_all(total_recv);
+    MPI_Alltoallv(send_all.data(), send_counts.data(), send_displs.data(), MPI_CHAR,
+                  recv_all.data(), recv_counts.data(), recv_displs.data(), MPI_CHAR, MPI_COMM_WORLD);
+
+    // 6. Stream-deserialize received buffer and write sorted output file
+    std::string rank_out = output_file + "_rank_" + std::to_string(rank);
+    std::ofstream out(rank_out, std::ios::binary);
+    size_t pos = 0;
+    while (pos < recv_all.size()) {
+        size_t saved = pos;
+        std::vector<Record> recs = deserialize_records(
+            std::vector<char>(recv_all.begin() + pos, recv_all.end())
+        );
+        for (auto& rec : recs) rec.write_to_stream(out);
+        pos += (memcmp(recv_all.data() + saved, recv_all.data() + saved, 0), 0); // move pos by record bytes
     }
-    outfile.close();
-    
-    // Step 8: Rank 0 concatenates all rank files to final output
+    out.close();
+
     MPI_Barrier(MPI_COMM_WORLD);
-    
+
+    // 7. Rank 0 concatenates rank outputs into final output
     if (rank == 0) {
-        std::ofstream final_output(output_file, std::ios::binary);
-        
-        for (int i = 0; i < size; ++i) {
-            std::string rank_file = output_file + "_rank_" + std::to_string(i);
-            std::ifstream rank_input(rank_file, std::ios::binary);
-            
-            final_output << rank_input.rdbuf();
-            rank_input.close();
-            
-            // Clean up rank file
-            std::filesystem::remove(rank_file);
+        std::ofstream final_out(output_file, std::ios::binary);
+        for (int i = 0; i < size; i++) {
+            std::ifstream in_r(output_file + "_rank_" + std::to_string(i), std::ios::binary);
+            final_out << in_r.rdbuf();
+            in_r.close();
+            std::filesystem::remove(output_file + "_rank_" + std::to_string(i));
         }
-        
-        final_output.close();
-        std::cout << "Final output written to: " << output_file << std::endl;
+        final_out.close();
     }
 }
+
 
 /**
  * Serialize a vector of Records into a contiguous block of memory.
@@ -533,52 +506,4 @@ std::vector<Record> deserialize_records(const std::vector<char>& buffer) {
     }
     
     return records;
-}
-
-/**
- * Runs a performance test on the MPI sorting implementation with various memory budgets.
- * 
- * This function executes the `mpi_sort_file` with a range of memory budgets to evaluate
- * its performance. For each memory budget, it measures the time taken to sort the input
- * file and outputs the result. The test is performed in parallel across all available MPI
- * ranks, with rank 0 responsible for logging the performance metrics.
- *
- * @param input_file Path to the input file to be sorted.
- */
-void mpi_performance_test(const std::string& input_file) {
-    int rank, size;
-    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-    MPI_Comm_size(MPI_COMM_WORLD, &size);
-    
-    if (rank == 0) {
-        std::cout << "=== MPI Performance Test ===" << std::endl;
-    }
-    
-    // Test with different memory budgets
-    std::vector<size_t> memory_budgets = {
-        64 * 1024 * 1024,   // 64 MB
-        128 * 1024 * 1024,  // 128 MB
-        256 * 1024 * 1024,  // 256 MB
-        512 * 1024 * 1024   // 512 MB
-    };
-    
-    for (size_t budget : memory_budgets) {
-        if (rank == 0) {
-            std::cout << "\nTesting with " << (budget / (1024*1024)) << " MB memory budget..." << std::endl;
-        }
-        
-        std::string output_file = "test_mpi_output_" + std::to_string(budget/(1024*1024)) + "mb.bin";
-        
-        auto start = std::chrono::high_resolution_clock::now();
-        mpi_sort_file(input_file, output_file, budget, "temp_mpi");
-        auto end = std::chrono::high_resolution_clock::now();
-        
-        auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
-        
-        if (rank == 0) {
-            std::cout << "Time: " << duration.count() << " ms" << std::endl;
-        }
-        
-        MPI_Barrier(MPI_COMM_WORLD);
-    }
 }

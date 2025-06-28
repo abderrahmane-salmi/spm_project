@@ -76,9 +76,11 @@ void read_records_from_range(
  */
 void distributed_merge(
     const std::string& local_sorted_file,
+    const std::vector<uint64_t>& local_samples, 
     const std::string& output_file,
     int rank,
-    int size
+    int size,
+    size_t memory_budget
 );
 
 /**
