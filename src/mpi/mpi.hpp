@@ -75,7 +75,7 @@ void read_records_from_range(
  * @param size Total number of MPI processes
  */
 void distributed_merge(
-    std::vector<Record>& local_records,
+    const std::string& local_sorted_file,
     const std::string& output_file,
     int rank,
     int size
