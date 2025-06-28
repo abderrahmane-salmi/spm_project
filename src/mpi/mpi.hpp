@@ -99,6 +99,6 @@ void distributed_merge(
  * Helper function to serialize/deserialize records for MPI communication
  */
 std::vector<char> serialize_records(const std::vector<Record>& records);
-std::vector<Record> deserialize_records(const std::vector<char>& buffer);
+std::pair<std::vector<Record>, size_t> deserialize_records_with_offset(const std::vector<char>& buffer);
 
 #endif // MPI_HPP

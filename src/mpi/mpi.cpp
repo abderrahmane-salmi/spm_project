@@ -353,7 +353,7 @@ void distributed_merge(
         size_t got = in.gcount();
         processed += got;
 
-        std::vector<Record> recs = deserialize_records(chunk_buf);
+        auto [recs, used_bytes] = deserialize_records_with_offset(chunk_buf);
         for (auto& rec : recs) {
             int dst = size - 1;
             for (int d = 0; d < size - 1; ++d) {
@@ -394,14 +394,15 @@ void distributed_merge(
     std::ofstream out(rank_out, std::ios::binary);
     size_t pos = 0;
     while (pos < recv_all.size()) {
-        size_t saved = pos;
-        std::vector<Record> recs = deserialize_records(
+        auto [recs, consumed] = deserialize_records_with_offset(
             std::vector<char>(recv_all.begin() + pos, recv_all.end())
         );
+
+        if (consumed == 0) break;  // prevent infinite loop
+
         for (auto& rec : recs) rec.write_to_stream(out);
-        pos += (memcmp(recv_all.data() + saved, recv_all.data() + saved, 0), 0); // move pos by record bytes
+        pos += consumed;
     }
-    out.close();
 
     MPI_Barrier(MPI_COMM_WORLD);
 
@@ -466,44 +467,36 @@ std::vector<char> serialize_records(const std::vector<Record>& records) {
  * 
  * If the buffer is incomplete, an empty vector of Records is returned.
  */
-std::vector<Record> deserialize_records(const std::vector<char>& buffer) {
+std::pair<std::vector<Record>, size_t> deserialize_records_with_offset(const std::vector<char>& buffer) {
     std::vector<Record> records;
-    
-    if (buffer.size() < sizeof(size_t)) {
-        return records;
-    }
-    
     size_t pos = 0;
     
-    // Read number of records
-    size_t count;
-    std::memcpy(&count, buffer.data() + pos, sizeof(count));
-    pos += sizeof(count);
+    if (buffer.size() < sizeof(size_t)) return {records, pos};
     
+    size_t count;
+    std::memcpy(&count, buffer.data(), sizeof(count));
+    pos += sizeof(count);
+
     records.reserve(count);
     
-    // Read each record
     for (size_t i = 0; i < count && pos < buffer.size(); ++i) {
         Record record;
         
-        // Read key
         if (pos + sizeof(record.key) > buffer.size()) break;
         std::memcpy(&record.key, buffer.data() + pos, sizeof(record.key));
         pos += sizeof(record.key);
-        
-        // Read length
+
         if (pos + sizeof(record.len) > buffer.size()) break;
         std::memcpy(&record.len, buffer.data() + pos, sizeof(record.len));
         pos += sizeof(record.len);
-        
-        // Read payload
+
         if (pos + record.len > buffer.size()) break;
         record.payload.resize(record.len);
         std::memcpy(record.payload.data(), buffer.data() + pos, record.len);
         pos += record.len;
-        
+
         records.push_back(record);
     }
-    
-    return records;
+
+    return {records, pos};
 }
