@@ -7,7 +7,8 @@
 #include <cstring>
 
 #include "../include/record.hpp"
-#include "../chunking/chunking.hpp"
+// #include "../chunking/chunking.hpp"
+#include "../chunking/adaptive_chunker.cpp"
 #include "../merging/merging.hpp"
 #include "../openmp/omp.hpp"
 
@@ -40,13 +41,22 @@ void mpi_sort_file(
     std::string rank_temp_dir = temp_dir + "/rank_" + std::to_string(rank);
     std::filesystem::create_directories(rank_temp_dir);
     
-    // Step 1: Calculate file partition
-    size_t start_offset, end_offset;
-    calculate_file_partition(input_file, rank, size, start_offset, end_offset);
-    
-    // Step 2: Create temporary file with just this rank's data
+    // Step 1: Use adaptive chunker to divide file based on memory budget and MPI size
+    ChunkingConfig config;
+    config.available_memory_bytes = memory_budget; // your size_t memory budget
+    AdaptiveChunker chunker(config);
+    std::vector<ChunkInfo> chunks = chunker.analyze_file_adaptive(input_file);
+
+    // Sanity check to ensure chunks are for each rank
+    if (chunks.size() != static_cast<size_t>(size)) {
+        std::cerr << "Error: AdaptiveChunker returned incorrect number of chunks" << std::endl;
+        MPI_Abort(MPI_COMM_WORLD, 1);
+    }
+
+    // Step 2: Extract this rank’s assigned partition info from chunks
+    ChunkInfo my_chunk = chunks[rank];
     std::string local_partition_file = rank_temp_dir + "/partition.bin";
-    extract_partition_to_file(input_file, start_offset, end_offset, local_partition_file);
+    extract_partition_to_file(input_file, my_chunk.offset_bytes, my_chunk.offset_bytes + my_chunk.length_bytes, local_partition_file);
     
     // Step 3: Sort partition using OpenMP external sort (stays on disk)
     std::string local_sorted_file = rank_temp_dir + "/sorted.bin";

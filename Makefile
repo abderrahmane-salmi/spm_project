@@ -38,20 +38,20 @@ all: openmp fastflow mpi filegen
 # Build OpenMP binary
 openmp: $(OMP_BIN)
 
-$(OMP_BIN): $(OMP_DIR)/omp_main.cpp $(INCLUDE_DIR)/record.hpp $(OMP_DIR)/omp.hpp src/filegen/filegen.cpp src/chunking/chunking.cpp src/merging/merging.cpp
-	$(CXX) $(CXXFLAGS) $(OMP_FLAGS) $(INCLUDES) -o $@ $(OMP_DIR)/omp_main.cpp src/filegen/filegen.cpp src/chunking/chunking.cpp src/merging/merging.cpp
+$(OMP_BIN): $(OMP_DIR)/omp_main.cpp $(INCLUDE_DIR)/record.hpp $(OMP_DIR)/omp.hpp src/filegen/filegen.cpp src/chunking/adaptive_chunker.cpp src/merging/merging.cpp
+	$(CXX) $(CXXFLAGS) $(OMP_FLAGS) $(INCLUDES) -o $@ $(OMP_DIR)/omp_main.cpp src/filegen/filegen.cpp src/chunking/adaptive_chunker.cpp src/merging/merging.cpp
 
 # Build FastFlow binary
 fastflow: $(FF_BIN)
 
-$(FF_BIN): $(FF_DIR)/ff_main.cpp $(INCLUDE_DIR)/record.hpp $(FF_DIR)/ff.hpp src/filegen/filegen.cpp src/chunking/chunking.cpp src/merging/merging.cpp
-	$(CXX) $(CXXFLAGS) $(FF_INCLUDES) $(INCLUDES) -o $@ $(FF_DIR)/ff_main.cpp src/filegen/filegen.cpp src/chunking/chunking.cpp src/merging/merging.cpp -pthread
+$(FF_BIN): $(FF_DIR)/ff_main.cpp $(INCLUDE_DIR)/record.hpp $(FF_DIR)/ff.hpp src/filegen/filegen.cpp src/chunking/adaptive_chunker.cpp src/merging/merging.cpp
+	$(CXX) $(CXXFLAGS) $(FF_INCLUDES) $(INCLUDES) -o $@ $(FF_DIR)/ff_main.cpp src/filegen/filegen.cpp src/chunking/adaptive_chunker.cpp src/merging/merging.cpp -pthread
 
 # Build MPI binary
 mpi: $(MPI_BIN)
 
-$(MPI_BIN): $(MPI_DIR)/mpi_main.cpp $(MPI_DIR)/mpi.cpp $(MPI_DIR)/mpi.hpp $(INCLUDE_DIR)/record.hpp src/filegen/filegen.cpp src/chunking/chunking.cpp src/merging/merging.cpp
-	$(MPICXX) $(CXXFLAGS) $(MPIFLAGS) $(INCLUDES) -o $@ $(MPI_DIR)/mpi_main.cpp $(MPI_DIR)/mpi.cpp $(MPI_DIR)/mpi.hpp src/filegen/filegen.cpp src/chunking/chunking.cpp src/merging/merging.cpp
+$(MPI_BIN): $(MPI_DIR)/mpi_main.cpp $(MPI_DIR)/mpi.cpp $(MPI_DIR)/mpi.hpp $(INCLUDE_DIR)/record.hpp src/filegen/filegen.cpp src/chunking/adaptive_chunker.cpp src/merging/merging.cpp
+	$(MPICXX) $(CXXFLAGS) $(MPIFLAGS) $(INCLUDES) -o $@ $(MPI_DIR)/mpi_main.cpp $(MPI_DIR)/mpi.cpp $(MPI_DIR)/mpi.hpp src/filegen/filegen.cpp src/chunking/adaptive_chunker.cpp src/merging/merging.cpp
 
 # Build filegen CLI tool
 filegen: $(FILEGEN_BIN)

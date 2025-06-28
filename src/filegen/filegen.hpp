@@ -2,6 +2,7 @@
 #define FILE_UTILS_HPP
 
 #include <string>
+#include <cstdint>
 
 class FileGenerator {
 public:

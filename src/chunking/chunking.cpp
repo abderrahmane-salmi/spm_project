@@ -1,8 +1,12 @@
-#include "chunking.hpp"
-#include "../include/record.hpp"
+#pragma once
+#include <cstddef>
+#include <algorithm>
 #include <fstream>
 #include <stdexcept>
 #include <vector>
+
+#include "chunking.hpp"
+#include "../include/record.hpp"
 
 /**
  * Analyze a binary file of records and split it into memory-bounded chunks.
@@ -88,4 +92,21 @@ std::vector<std::string> generate_chunk_files(const std::string& input_file, siz
     }
 
     return chunk_files;
+}
+
+inline size_t compute_optimal_chunk_size(size_t total_file_size,
+                                         size_t memory_per_process,
+                                         size_t num_threads,
+                                         double safety_margin = 0.8) {
+    // Apply safety margin
+    size_t safe_mem = memory_per_process * safety_margin;
+
+    // Estimate memory per thread
+    size_t mem_per_thread = safe_mem / std::max(size_t(1), num_threads);
+
+    // Conservative size for thread-safety and overhead
+    size_t estimated_chunk_size = mem_per_thread;
+
+    // Clamp to sane limits
+    return std::clamp(estimated_chunk_size, size_t(16 * 1024 * 1024), size_t(1L * 1024 * 1024 * 1024));
 }
