@@ -67,6 +67,18 @@ void read_records_from_range(
     std::vector<Record>& records
 );
 
+void extract_partition_to_file(
+    const std::string& input_file,
+    size_t start_offset,
+    size_t end_offset,
+    const std::string& output_file
+);
+
+std::vector<uint64_t> sample_sorted_file(
+    const std::string& sorted_file,
+    size_t num_samples
+);
+
 /**
  * Distributed merge using sample sort approach
  * @param local_records Sorted records from this rank
