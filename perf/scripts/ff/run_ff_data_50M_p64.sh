@@ -1,10 +1,13 @@
 #!/bin/bash
 
+SCRIPT_DIR="$(dirname "$0")"   # folder where the script is
+cd "$(dirname "$0")/../../.." # go to project root (for relative INPUT path)
+
 INPUT="data/data_50M_p64.bin"
 MEMORY=256
 WORKERS=(1 2 4 8 16)
 
-RESULTS_FILE="ff_results_50M_p64.csv"
+RESULTS_FILE="$SCRIPT_DIR/ff_results_50M_p64.csv"
 
 echo "Filename,Workers,Time(s)" > $RESULTS_FILE
 
