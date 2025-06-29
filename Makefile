@@ -21,19 +21,21 @@ OMP_DIR = $(SRC_DIR)/openmp
 FF_DIR = $(SRC_DIR)/fastflow
 MPI_DIR = $(SRC_DIR)/mpi
 FILEGEN_DIR = $(SRC_DIR)/filegen
+SEQ_DIR = $(SRC_DIR)/sequential
 
 # Output binaries
 OMP_BIN = omp_mergesort
 FF_BIN = ff_mergesort
 MPI_BIN = mpi_mergesort
 FILEGEN_BIN = filegen
+SEQ_BIN = seq_mergesort
 
 # Includes
 INCLUDES = -I$(INCLUDE_DIR)
 
 .PHONY: all clean openmp fastflow mpi filegen test quick-test perf-test test_mpi
 
-all: openmp fastflow mpi filegen
+all: openmp fastflow mpi filegen sequential
 
 # Build OpenMP binary
 openmp: $(OMP_BIN)
@@ -52,6 +54,12 @@ mpi: $(MPI_BIN)
 
 $(MPI_BIN): $(MPI_DIR)/mpi_main.cpp $(MPI_DIR)/mpi.cpp $(MPI_DIR)/mpi.hpp $(INCLUDE_DIR)/record.hpp src/filegen/filegen.cpp src/chunking/chunking.cpp src/merging/merging.cpp
 	$(MPICXX) $(CXXFLAGS) $(MPIFLAGS) $(INCLUDES) -o $@ $(MPI_DIR)/mpi_main.cpp $(MPI_DIR)/mpi.cpp $(MPI_DIR)/mpi.hpp src/filegen/filegen.cpp src/chunking/chunking.cpp src/merging/merging.cpp
+
+# Build sequential binary
+sequential: $(SEQ_BIN)
+
+$(SEQ_BIN): $(SEQ_DIR)/sequential_main.cpp $(SEQ_DIR)/sequential.hpp $(INCLUDE_DIR)/record.hpp src/filegen/filegen.cpp src/chunking/chunking.cpp src/merging/merging.cpp
+	$(CXX) $(CXXFLAGS) $(INCLUDES) -o $@ $(SEQ_DIR)/sequential_main.cpp src/filegen/filegen.cpp src/chunking/chunking.cpp src/merging/merging.cpp
 
 # Build filegen CLI tool
 filegen: $(FILEGEN_BIN)
