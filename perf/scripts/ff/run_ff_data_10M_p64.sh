@@ -1,5 +1,6 @@
 #!/bin/bash
 
+cd "$(dirname "$0")/../../.."
 INPUT="data/data_10M_p64.bin"
 MEMORY=256  # MB
 WORKERS=(1 2 4 8 16)
