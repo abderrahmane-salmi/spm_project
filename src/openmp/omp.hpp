@@ -15,8 +15,7 @@
 
 #include "../include/record.hpp"
 #include "../include/record_io.hpp"
-// #include "../chunking/chunking.hpp"
-#include "../chunking/adaptive_chunker.cpp"
+#include "../chunking/chunking.hpp"
 #include "../merging/merging.hpp"
 
 class OpenMPExternalMergeSort {
@@ -79,13 +78,7 @@ public:
         std::cout << "Output: " << output_file << std::endl;
 
         // PHASE 1: Divide file into chunks
-        // auto chunk_files = generate_chunk_files(input_file, memory_budget_ * 0.8, temp_dir_);
-        ChunkingConfig config;
-        config.available_memory_bytes = memory_budget_;
-        config.num_threads = omp_get_max_threads();  // Dynamic detection
-
-        AdaptiveChunker chunker(config);
-        auto chunk_files = chunker.generate_adaptive_chunks(input_file, temp_dir_);
+        auto chunk_files = generate_chunk_files(input_file, memory_budget_ * 0.8, temp_dir_);
         std::cout << "Phase 1: Created " << chunk_files.size() << " chunk files." << std::endl;
         
         // PHASE 2: Sort chunks in parallel, and write to temp files

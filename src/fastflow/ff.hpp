@@ -12,8 +12,7 @@
 #include <memory>
 
 #include "../include/record.hpp"
-// #include "../chunking/chunking.hpp"
-#include "../chunking/adaptive_chunker.cpp"
+#include "../chunking/chunking.hpp"
 #include "../merging/merging.hpp"
 
 using namespace ff;
@@ -239,13 +238,7 @@ public:
         std::cout << "Workers: " << num_workers << std::endl;
 
         // Phase 1: Divide file into chunks
-        // auto chunk_files = generate_chunk_files(input_file, memory_budget * 0.8, temp_dir);
-        ChunkingConfig config;
-        config.available_memory_bytes = memory_budget;
-        config.num_threads = num_workers;
-
-        AdaptiveChunker chunker(config);
-        auto chunk_files = chunker.generate_adaptive_chunks(input_file, temp_dir);
+        auto chunk_files = generate_chunk_files(input_file, memory_budget * 0.8, temp_dir);
         std::cout << "Created " << chunk_files.size() << " chunks" << std::endl;
 
         // Phase 2: Sort chunks in parallel using FastFlow farm
