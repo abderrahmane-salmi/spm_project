@@ -39,21 +39,36 @@ int main(int argc, char* argv[]) {
         verify_sorted_output(output_file);
     }
     else if (cmd == "benchmark") {
-        std::vector<size_t> mems = {64, 128, 256, 512, 1024};
-        for (size_t mb : mems) {
-            SequentialExternalMergeSort sorter(mb * 1024 * 1024);
-            std::string out = "bench_" + std::to_string(mb) + "mb.bin";
-
-            auto start = std::chrono::high_resolution_clock::now();
-            bool ok = sorter.sort_file(input_file, out);
-            auto end = std::chrono::high_resolution_clock::now();
-            double dur = std::chrono::duration<double>(end - start).count();
-
-            std::cout << "Memory: " << mb << "MB, Time: " << dur << "s" << std::endl;
-
-            if (ok) verify_sorted_output(out);
-            std::filesystem::remove(out);
+        if (argc < 4) {
+            std::cerr << "Usage: " << argv[0] << " benchmark <input_file> <memory_limit_mb>" << std::endl;
+            return 1;
         }
+
+        std::string input_file = argv[2];
+        size_t memory_limit_mb = std::stoul(argv[3]);
+        size_t mem_bytes = memory_limit_mb * 1024 * 1024;
+
+        SequentialExternalMergeSort sorter(mem_bytes);
+        std::string out = "benchmark_output.bin";
+
+        std::cout << "Benchmarking sort..." << std::endl;
+        std::cout << "Input file: " << input_file << std::endl;
+        std::cout << "Output file: " << out << std::endl;
+        std::cout << "Memory limit: " << memory_limit_mb << "MB" << std::endl;
+
+        auto start = std::chrono::high_resolution_clock::now();
+        bool ok = sorter.sort_file(input_file, out);
+        auto end = std::chrono::high_resolution_clock::now();
+        double dur = std::chrono::duration<double>(end - start).count();
+
+        if (ok) {
+            std::cout << "Sort successful" << std::endl;
+            std::cout << "Time taken: " << dur << " seconds" << std::endl;
+        } else {
+            std::cerr << "Sort failed!" << std::endl;
+        }
+
+        std::filesystem::remove(out);
     }
     else {
         print_usage(argv[0]);
