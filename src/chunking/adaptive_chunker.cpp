@@ -499,7 +499,7 @@ inline size_t AdaptiveChunker::get_optimal_merge_fanout(size_t num_chunks) const
     return std::clamp(optimal_fanout, static_cast<size_t>(8), max_fanout);
 }
 
-std::vector<ChunkInfo> AdaptiveChunker::chunk_file_evenly(const std::string& input_file, size_t num_chunks) {
+inline std::vector<ChunkInfo> AdaptiveChunker::chunk_file_evenly(const std::string& input_file, size_t num_chunks) {
     std::ifstream in(input_file, std::ios::binary);
     if (!in.is_open()) {
         throw std::runtime_error("Cannot open input file for chunking: " + input_file);
