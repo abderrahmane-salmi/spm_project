@@ -156,6 +156,9 @@ inline AdaptiveChunker::FileSample AdaptiveChunker::sample_file(
     
     // Sample records from different parts of the file
     size_t file_size = get_file_size(input_file);
+    if (file_size == 0) {
+        throw std::runtime_error("Input file is empty: " + input_file);
+    }
     size_t sample_interval = std::max<size_t>(1ULL, file_size / sample_size);
     
     Record record;
@@ -240,13 +243,29 @@ inline size_t AdaptiveChunker::calculate_optimal_chunk_size(
     // Apply min/max constraints
     size_t min_size = config_.min_chunk_size_mb * 1024 * 1024;
     size_t max_size = config_.max_chunk_size_mb * 1024 * 1024;
-    
     effective_chunk_size = std::clamp(effective_chunk_size, min_size, max_size);
+
+    // Ensure we don't underutilize workers (at least one chunk per thread)
+    size_t min_chunks = std::min(config_.num_threads, static_cast<size_t>(file_size / min_size));
+    if (min_chunks > 0) {
+        size_t max_chunk_size_for_parallelism = file_size / min_chunks;
+        effective_chunk_size = std::min(effective_chunk_size, max_chunk_size_for_parallelism);
+    }
+
+    // Ensure chunk size is reasonable relative to record size, but only if we have enough records
+    size_t min_records_per_chunk = 1000;
+    size_t total_estimated_records = file_size / sample_record_size;
+
+    if (total_estimated_records > min_records_per_chunk) {
+        size_t min_size_for_records = sample_record_size * min_records_per_chunk;
+        effective_chunk_size = std::max(effective_chunk_size, min_size_for_records);
+    }
+
     
     // Ensure chunk size is reasonable relative to record size
-    size_t min_records_per_chunk = 1000; // At least 1000 records per chunk
-    size_t min_size_for_records = sample_record_size * min_records_per_chunk;
-    effective_chunk_size = std::max(effective_chunk_size, min_size_for_records);
+    // size_t min_records_per_chunk = 1000; // At least 1000 records per chunk
+    // size_t min_size_for_records = sample_record_size * min_records_per_chunk;
+    // effective_chunk_size = std::max(effective_chunk_size, min_size_for_records);
     
     return effective_chunk_size;
 }
