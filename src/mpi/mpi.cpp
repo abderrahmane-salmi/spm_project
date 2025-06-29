@@ -45,7 +45,7 @@ void mpi_sort_file(
     ChunkingConfig config;
     config.available_memory_bytes = memory_budget; // your size_t memory budget
     AdaptiveChunker chunker(config);
-    std::vector<ChunkInfo> chunks = chunker.analyze_file_adaptive(input_file);
+    std::vector<ChunkInfo> chunks = chunker.chunk_file_evenly(input_file, size);
 
     // Sanity check to ensure chunks are for each rank
     if (chunks.size() != static_cast<size_t>(size)) {

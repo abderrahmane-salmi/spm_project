@@ -91,6 +91,8 @@ public:
      * Get recommended merge strategy based on chunk count
      */
     size_t get_optimal_merge_fanout(size_t num_chunks) const;
+
+    std::vector<ChunkInfo> chunk_file_evenly(const std::string& input_file, size_t num_chunks);
     
 private:
     /**
@@ -495,6 +497,53 @@ inline size_t AdaptiveChunker::get_optimal_merge_fanout(size_t num_chunks) const
     // Multi-level merge - find optimal fanout
     size_t optimal_fanout = static_cast<size_t>(std::sqrt(num_chunks));
     return std::clamp(optimal_fanout, static_cast<size_t>(8), max_fanout);
+}
+
+std::vector<ChunkInfo> AdaptiveChunker::chunk_file_evenly(const std::string& input_file, size_t num_chunks) {
+    std::ifstream in(input_file, std::ios::binary);
+    if (!in.is_open()) {
+        throw std::runtime_error("Cannot open input file for chunking: " + input_file);
+    }
+
+    std::vector<ChunkInfo> chunks;
+    std::vector<size_t> record_offsets; // Byte offsets of all records
+
+    // Step 1: Read entire file and store record start positions
+    size_t offset = 0;
+    Record record;
+    while (in.peek() != EOF) {
+        size_t pos_before = in.tellg();
+        if (!record.read_from_stream(in)) break;
+        size_t pos_after = in.tellg();
+        record_offsets.push_back(pos_before);
+        offset = pos_after;
+    }
+
+    if (record_offsets.empty()) {
+        throw std::runtime_error("No records found in file: " + input_file);
+    }
+
+    size_t total_records = record_offsets.size();
+    size_t records_per_chunk = total_records / num_chunks;
+    size_t remaining = total_records % num_chunks;
+
+    // Step 2: Create chunk boundaries based on record alignment
+    size_t start_idx = 0;
+    for (size_t i = 0; i < num_chunks; ++i) {
+        size_t count = records_per_chunk + (i < remaining ? 1 : 0); // Distribute leftovers
+        size_t start_offset = record_offsets[start_idx];
+        size_t end_offset = (start_idx + count < record_offsets.size())
+                            ? record_offsets[start_idx + count]
+                            : offset; // end of file
+
+        size_t length = end_offset - start_offset;
+        size_t memory_est = length * RECORD_MEMORY_OVERHEAD * SORTING_MEMORY_OVERHEAD;
+
+        chunks.emplace_back(start_offset, length, count, memory_est);
+        start_idx += count;
+    }
+
+    return chunks;
 }
 
 inline void AdaptiveChunker::print_strategy_summary(
