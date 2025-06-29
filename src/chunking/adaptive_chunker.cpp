@@ -295,12 +295,24 @@ inline std::vector<ChunkInfo> AdaptiveChunker::analyze_file_adaptive(
         ));
     }
     
+    // Step 3.5: Adjust chunk size to ensure even number of chunks
+    size_t initial_chunk_count = (config_.file_size_bytes + optimal_chunk_size - 1) / optimal_chunk_size;
+    if (initial_chunk_count % 2 != 0) {
+        // Increase chunk count by 1 to make it even
+        size_t adjusted_chunk_count = initial_chunk_count + 1;
+        optimal_chunk_size = (config_.file_size_bytes + adjusted_chunk_count - 1) / adjusted_chunk_count;
+        // Clamp to min/max chunk size again
+        size_t min_size = config_.min_chunk_size_mb * 1024 * 1024;
+        size_t max_size = config_.max_chunk_size_mb * 1024 * 1024;
+        optimal_chunk_size = std::clamp(optimal_chunk_size, min_size, max_size);
+    }
+    
     std::cout << "Adaptive chunking analysis:" << std::endl;
     std::cout << "File size: " << (config_.file_size_bytes / 1024 / 1024) << " MB" << std::endl;
     std::cout << "Avg record size: " << sample.avg_record_size << " bytes" << std::endl;
     std::cout << "Optimal chunk size: " << (optimal_chunk_size / 1024 / 1024) << " MB" << std::endl;
     
-    // Step 4: Create chunks with the calculated size
+    // Step 4: Create chunks with the calculated (and adjusted) size
     std::ifstream in(input_file, std::ios::binary);
     if (!in.is_open()) {
         throw std::runtime_error("Cannot open input file: " + input_file);
@@ -330,10 +342,11 @@ inline std::vector<ChunkInfo> AdaptiveChunker::analyze_file_adaptive(
         }
         
         if (record_count > 0) {
-            // Estimate memory usage including overhead
             size_t memory_estimate = bytes_used * RECORD_MEMORY_OVERHEAD * SORTING_MEMORY_OVERHEAD;
             chunks.emplace_back(chunk_start, bytes_used, record_count, memory_estimate);
         }
+        
+        if (current_offset >= config_.file_size_bytes) break;
     }
     
     // Step 5: Balance chunks if requested
