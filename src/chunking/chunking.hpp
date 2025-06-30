@@ -21,7 +21,11 @@ struct ChunkInfo {
  * @param memory_budget_bytes Approximate max size per chunk (in bytes).
  * @return Vector of ChunkInfo, each describing a chunk.
  */
-std::vector<ChunkInfo> analyze_file_for_chunks(const std::string& input_file, size_t memory_budget_bytes);
+std::vector<ChunkInfo> analyze_file_for_chunks(
+    const std::string& input_file,
+    size_t memory_budget_bytes,
+    size_t num_threads = 1
+);
 
 /**
  * Analyzes the file and creates actual chunk files on disk.
@@ -31,6 +35,11 @@ std::vector<ChunkInfo> analyze_file_for_chunks(const std::string& input_file, si
  * @param temp_dir Directory where chunk files will be stored.
  * @return Vector of paths to generated chunk files.
  */
-std::vector<std::string> generate_chunk_files(const std::string& input_file, size_t memory_budget_bytes, const std::string& temp_dir);
+std::vector<std::string> generate_chunk_files(
+    const std::string& input_file,
+    size_t memory_budget_bytes,
+    const std::string& temp_dir,
+    size_t num_threads = 1
+);
 
 #endif // CHUNKING_HPP

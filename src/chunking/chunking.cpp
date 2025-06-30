@@ -20,27 +20,42 @@
  * @param memory_budget_bytes Approximate max size per chunk (in bytes).
  * @return Vector of ChunkInfo, each describing a chunk.
  */
-std::vector<ChunkInfo> analyze_file_for_chunks(const std::string& input_file, size_t memory_budget_bytes) {
-    std::ifstream in(input_file, std::ios::binary);
+std::vector<ChunkInfo> analyze_file_for_chunks(const std::string& input_file,
+                                               size_t memory_budget_bytes,
+                                               size_t num_threads)
+{
+    std::ifstream in(input_file, std::ios::binary | std::ios::ate);
     if (!in.is_open()) {
         throw std::runtime_error("Cannot open input file: " + input_file);
     }
 
+    size_t file_size = in.tellg();
+    in.seekg(0, std::ios::beg);
+
+    // Ensure enough chunks for parallelism
+    size_t min_chunk_size = file_size / std::max<size_t>(1, num_threads);
+    size_t effective_chunk_budget = std::min(memory_budget_bytes, min_chunk_size);
+
     std::vector<ChunkInfo> chunks;
     size_t current_offset = 0;
 
-    while (in.good()) {
+    while (in.good() && current_offset < file_size) {
         size_t chunk_start = current_offset;
         size_t bytes_used = 0;
         size_t record_count = 0;
 
-        while (in.good() && bytes_used < memory_budget_bytes) {
+        while (in.good() && bytes_used < effective_chunk_budget) {
             Record record;
             size_t pos_before = in.tellg();
 
             if (record.read_from_stream(in)) {
                 size_t pos_after = in.tellg();
                 size_t record_size = pos_after - pos_before;
+                if (bytes_used + record_size > effective_chunk_budget && record_count > 0) {
+                    // Stop before exceeding budget, leave this record for next chunk
+                    in.seekg(pos_before, std::ios::beg);
+                    break;
+                }
                 bytes_used += record_size;
                 current_offset += record_size;
                 record_count++;
@@ -66,8 +81,18 @@ std::vector<ChunkInfo> analyze_file_for_chunks(const std::string& input_file, si
  * @param temp_dir Directory where chunk files will be stored.
  * @return Vector of paths to generated chunk files.
  */
-std::vector<std::string> generate_chunk_files(const std::string& input_file, size_t memory_budget_bytes, const std::string& temp_dir) {
-    auto chunks = analyze_file_for_chunks(input_file, memory_budget_bytes);
+std::vector<std::string> generate_chunk_files(const std::string& input_file,
+    size_t memory_budget_bytes,
+    const std::string& temp_dir,
+    size_t num_threads = 1
+) {
+    auto chunks = analyze_file_for_chunks(input_file, memory_budget_bytes, num_threads);
+
+    // Optimization: if only one chunk covers the entire input file, just return the input file path
+    if (chunks.size() == 1) {
+        return { input_file };
+    }
+
     std::vector<std::string> chunk_files;
 
     for (size_t i = 0; i < chunks.size(); ++i) {

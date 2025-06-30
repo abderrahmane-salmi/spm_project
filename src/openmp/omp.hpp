@@ -31,7 +31,7 @@ private:
     double phase2_time_;
     
 public:
-    OpenMPExternalMergeSort(size_t memory_budget = 1024 * 1024 * 1024, // default: 1GB
+    OpenMPExternalMergeSort(size_t memory_budget = 30720 * 1024 * 1024, // default: 30GB
                            size_t num_threads = 0,
                            const std::string& temp_dir = "./temp_omp") 
         : memory_budget_(memory_budget), 
@@ -78,7 +78,7 @@ public:
         std::cout << "Output: " << output_file << std::endl;
 
         // PHASE 1: Divide file into chunks
-        auto chunk_files = generate_chunk_files(input_file, memory_budget_ * 0.8, temp_dir_);
+        auto chunk_files = generate_chunk_files(input_file, memory_budget_ * 0.8, temp_dir_, num_threads_);
         std::cout << "Phase 1: Created " << chunk_files.size() << " chunk files." << std::endl;
         
         // PHASE 2: Sort chunks in parallel, and write to temp files
@@ -184,15 +184,15 @@ private:
             bytes_read += record.total_size();
             
             // Check if the memory usage exceeds the limit per thread
-            // if (bytes_read > memory_limit_per_thread) {
-            //     static bool warned = false;
-            //     if (!warned) {
-            //         std::cerr << "Warning: Thread " << thread_id << " exceeded memory budget (" 
-            //                 << bytes_read << " > " << memory_limit_per_thread << " bytes)" << std::endl;
-            //         warned = true;
-            //     }
-            //     // Do NOT break — continue reading the full chunk
-            // }
+            if (bytes_read > memory_limit_per_thread) {
+                static bool warned = false;
+                if (!warned) {
+                    std::cerr << "Warning: Thread " << thread_id << " exceeded memory budget (" 
+                            << bytes_read << " > " << memory_limit_per_thread << " bytes)" << std::endl;
+                    warned = true;
+                }
+                // Do NOT break — continue reading the full chunk
+            }
             
             // Add the record to the vector of records
             records.push_back(std::move(record));
