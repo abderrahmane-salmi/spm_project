@@ -39,6 +39,19 @@ public:
         
         num_threads_ = (num_threads == 0) ? omp_get_max_threads() : num_threads;
         omp_set_num_threads(num_threads_);
+
+        // confirm
+        int max_threads = omp_get_max_threads();
+        #pragma omp parallel
+        {
+            #pragma omp master
+            {
+                std::cout << "[OpenMP] omp_get_max_threads(): " << max_threads << std::endl;
+                std::cout << "[OpenMP] omp_get_num_threads() inside parallel region: " << omp_get_num_threads() << std::endl;
+            }
+        }
+
+
         std::filesystem::create_directories(temp_dir_);
         
         std::cout << "OpenMP MergeSort initialized with " << num_threads_ 
@@ -85,7 +98,7 @@ public:
         }
         
         // PHASE 3: Merge all sorted chunks back into one sorted output
-        if (!merge_sorted_files(temp_files_, output_file)) {
+        if (!parallel_merge_sorted_files(temp_files_, output_file)) {
             std::cerr << "Failed to merge sorted runs" << std::endl;
             return false;
         }
@@ -158,6 +171,12 @@ private:
     bool process_chunk_parallel(const std::string& chunk_file, 
                                const std::string& temp_file,
                                int thread_id) {
+        #pragma omp critical
+        {
+            std::cout << "Thread " << thread_id << " starting chunk " << chunk_file << std::endl;
+        }
+
+
         std::vector<Record> records;
         
         // Open the chunk file
@@ -262,6 +281,79 @@ private:
         std::cout << "Total records processed: " << total_records_processed_ << std::endl;
         std::cout << "Total elapsed time: " << total_time << " seconds" << std::endl;
     }
+
+
+    bool parallel_merge_sorted_files(const std::vector<std::string>& sorted_files, const std::string& output_file) {
+    std::vector<std::string> current_files = sorted_files;
+    std::vector<std::string> next_files;
+
+    size_t merge_round = 0;
+
+    while (current_files.size() > 1) {
+        next_files.clear();
+        size_t num_merges = current_files.size() / 2;
+
+        #pragma omp parallel for schedule(dynamic)
+        for (int i = 0; i < static_cast<int>(num_merges); ++i) {
+            std::string file1 = current_files[2 * i];
+            std::string file2 = current_files[2 * i + 1];
+            std::string merged_file = temp_dir_ + "/merge_" + std::to_string(merge_round) + "_" + std::to_string(i) + ".tmp";
+
+            std::ifstream in1(file1, std::ios::binary);
+            std::ifstream in2(file2, std::ios::binary);
+            std::ofstream out(merged_file, std::ios::binary);
+
+            if (!in1 || !in2 || !out) {
+                #pragma omp critical
+                std::cerr << "Failed to open one of the merge files: " << file1 << ", " << file2 << std::endl;
+                continue;
+            }
+
+            Record r1, r2;
+            bool has_r1 = r1.read_from_stream(in1);
+            bool has_r2 = r2.read_from_stream(in2);
+
+            while (has_r1 && has_r2) {
+                if (r1.key < r2.key) {
+                    r1.write_to_stream(out);
+                    has_r1 = r1.read_from_stream(in1);
+                } else {
+                    r2.write_to_stream(out);
+                    has_r2 = r2.read_from_stream(in2);
+                }
+            }
+            while (has_r1) {
+                r1.write_to_stream(out);
+                has_r1 = r1.read_from_stream(in1);
+            }
+            while (has_r2) {
+                r2.write_to_stream(out);
+                has_r2 = r2.read_from_stream(in2);
+            }
+
+            #pragma omp critical
+            {
+                next_files.push_back(merged_file);
+            }
+        }
+
+        // Handle odd leftover file (if any)
+        if (current_files.size() % 2 == 1) {
+            next_files.push_back(current_files.back());
+        }
+
+        current_files = next_files;
+        merge_round++;
+    }
+
+    // Final merge result
+    if (current_files.size() == 1) {
+        std::filesystem::rename(current_files[0], output_file);
+        return true;
+    }
+
+    return false;
+}
 };
 
 #endif // OPENMP_EXTERNAL_MERGESORT_H
