@@ -1,5 +1,0 @@
-Filename,MPI_Procs,OMP_Threads,Time(s)
-data/data_10M_p512.bin,1,4,87.4273
-data/data_10M_p512.bin,2,4,
-data/data_10M_p512.bin,4,4,83.0459
-data/data_10M_p512.bin,8,4,22.0753
