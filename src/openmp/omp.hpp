@@ -82,9 +82,12 @@ public:
         std::cout << "Phase 1: Created " << chunk_files.size() << " chunk files." << std::endl;
         
         // PHASE 2: Sort chunks in parallel, and write to temp files
-        if (!parallel_sort_chunks(chunk_files)) {
+        #pragma omp parallel num_threads(num_threads_)
+        {
+            if (!parallel_sort_chunks(chunk_files)) {
             std::cerr << "Failed to create sorted runs" << std::endl;
             return false;
+        }
         }
         
         // PHASE 3: Merge all sorted chunks back into one sorted output
