@@ -81,33 +81,46 @@ public:
      * @return true if the sorting was successful, false otherwise.
      */
     bool sort_file(const std::string& input_file, const std::string& output_file) {
-        auto start_time = std::chrono::high_resolution_clock::now();
-        
+        using Clock = std::chrono::high_resolution_clock;
+
         std::cout << "Starting OpenMP external merge sort..." << std::endl;
         std::cout << "Input: " << input_file << std::endl;
         std::cout << "Output: " << output_file << std::endl;
 
-        // PHASE 1: Divide file into chunks
+        auto t1 = Clock::now();
         auto chunk_files = generate_chunk_files(input_file, memory_budget_ * 0.8, temp_dir_, num_threads_);
+        auto t2 = Clock::now();
         std::cout << "Phase 1: Created " << chunk_files.size() << " chunk files." << std::endl;
-        
-        // PHASE 2: Sort chunks in parallel, and write to temp files
+        std::chrono::duration<double> chunking_time = t2 - t1;
+        std::cout << "[TIMING] Chunking time: " << chunking_time.count() << " s" << std::endl;
+
+        t1 = Clock::now();
         if (!parallel_sort_chunks(chunk_files)) {
             std::cerr << "Failed to create sorted runs" << std::endl;
             return false;
         }
-        
-        // PHASE 3: Merge all sorted chunks back into one sorted output
+        t2 = Clock::now();
+        std::chrono::duration<double> sorting_time = t2 - t1;
+        std::cout << "[TIMING] Sorting time: " << sorting_time.count() << " s" << std::endl;
+
+        t1 = Clock::now();
         if (!parallel_merge_sorted_files(temp_files_, output_file)) {
             std::cerr << "Failed to merge sorted runs" << std::endl;
             return false;
         }
-        
-        auto end_time = std::chrono::high_resolution_clock::now();
-        double total_time = std::chrono::duration<double>(end_time - start_time).count();
-        
+        t2 = Clock::now();
+        std::chrono::duration<double> merging_time = t2 - t1;
+        std::cout << "[TIMING] Merging time: " << merging_time.count() << " s" << std::endl;
+
+        double total_time = chunking_time.count() + sorting_time.count() + merging_time.count();
+
         print_statistics(total_time);
+        
+        t1 = Clock::now();
         cleanup_temp_files();
+        t2 = Clock::now();
+        std::chrono::duration<double> cleanup_time = t2 - t1;
+        std::cout << "[TIMING] Cleanup temp files time: " << cleanup_time.count() << " s" << std::endl;
         
         return true;
     }

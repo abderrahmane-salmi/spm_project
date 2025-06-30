@@ -28,7 +28,6 @@ void print_usage(const std::string& exe_name) {
 }
 
 int main(int argc, char* argv[]) {
-    print_usage(argv[0]);
 
     // Check command-line arguments
     if (argc < 3) {
