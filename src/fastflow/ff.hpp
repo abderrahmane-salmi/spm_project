@@ -242,7 +242,7 @@ public:
 
         // Phase 1: Divide file into chunks
         auto t1 = Clock::now();
-        auto chunk_files = generate_chunk_files(input_file, memory_budget * 0.8, temp_dir);
+        auto chunk_files = generate_chunk_files(input_file, memory_budget, temp_dir);
         auto t2 = Clock::now();
         std::cout << "Created " << chunk_files.size() << " chunks" << std::endl;
         std::chrono::duration<double> chunking_time = t2 - t1;
@@ -263,6 +263,9 @@ public:
         std::chrono::duration<double> merging_time = t2 - t1;
         std::cout << "Merged chunks into final output: " << output_file << std::endl;
         std::cout << "[TIMING] Merging time: " << merging_time.count() << " s" << std::endl;
+
+        double total_time = chunking_time.count() + sorting_time.count() + merging_time.count();
+        std::cout << "[TIMING] Total time: " << total_time << " s" << std::endl;
 
         t1 = Clock::now();
         cleanup_temp_files();

@@ -88,7 +88,7 @@ public:
         std::cout << "Output: " << output_file << std::endl;
 
         auto t1 = Clock::now();
-        auto chunk_files = generate_chunk_files(input_file, memory_budget_ * 0.8, temp_dir_);
+        auto chunk_files = generate_chunk_files(input_file, memory_budget_, temp_dir_);
         auto t2 = Clock::now();
         std::cout << "Phase 1: Created " << chunk_files.size() << " chunk files." << std::endl;
         std::chrono::duration<double> chunking_time = t2 - t1;
