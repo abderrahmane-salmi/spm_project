@@ -99,8 +99,8 @@ int main(int argc, char* argv[]) {
 
         // Output only performance data (compatible with bash parsing)
         std::cout << "[FF] File=" << input_file
-                << "Workers=" << workers
-                << "Memory=" << memory_mb
+                << " Workers=" << workers
+                << " Memory=" << memory_mb
                 << " Time=" << duration << std::endl;
     } 
     else {
