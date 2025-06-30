@@ -10,6 +10,7 @@
 #include <queue>
 #include <filesystem>
 #include <memory>
+#include <chrono>
 
 #include "../include/record.hpp"
 #include "../chunking/chunking.hpp"
@@ -233,21 +234,35 @@ public:
      * @param output_file The path to the file where the sorted result will be saved.
     */
     void sort_file(const std::string& input_file, const std::string& output_file) {
+        using Clock = std::chrono::high_resolution_clock;
+
         std::cout << "FastFlow External MergeSort starting..." << std::endl;
         std::cout << "Memory budget: " << (memory_budget / 1024 / 1024) << " MB" << std::endl;
         std::cout << "Workers: " << num_workers << std::endl;
 
         // Phase 1: Divide file into chunks
+        auto t1 = Clock::now();
         auto chunk_files = generate_chunk_files(input_file, memory_budget * 0.8, temp_dir);
+        auto t2 = Clock::now();
         std::cout << "Created " << chunk_files.size() << " chunks" << std::endl;
+        std::chrono::duration<double> chunking_time = t2 - t1;
+        std::cout << "[TIMING] Chunking time: " << chunking_time.count() << " s" << std::endl;
 
         // Phase 2: Sort chunks in parallel using FastFlow farm
+        t1 = Clock::now();
         auto sorted_files = parallel_sort_chunks(chunk_files);
+        t2 = Clock::now();
+        std::chrono::duration<double> sorting_time = t2 - t1;
         std::cout << "Sorted " << sorted_files.size() << " chunks in parallel" << std::endl;
+        std::cout << "[TIMING] Sorting time: " << sorting_time.count() << " s" << std::endl;
 
         // Phase 3: Merge sorted files into a single sorted output file
+        t1 = Clock::now();
         merge_sorted_files(sorted_files, output_file);
+        t2 = Clock::now();
+        std::chrono::duration<double> merging_time = t2 - t1;
         std::cout << "Merged chunks into final output: " << output_file << std::endl;
+        std::cout << "[TIMING] Merging time: " << merging_time.count() << " s" << std::endl;
 
         cleanup_temp_files();
     }
