@@ -129,30 +129,34 @@ private:
             temp_files_[i] = temp_dir_ + "/run_" + std::to_string(i) + ".tmp";
         }
         
-        bool success = true;
+        // bool success = true;
         
         // Process each chunk in parallel
         // Use OpenMP to parallelize the loop
-        #pragma omp parallel for schedule(dynamic, 1) shared(success)
+        // #pragma omp parallel for schedule(dynamic, 1) shared(success)
+        #pragma omp parallel for schedule(dynamic)
         for (int i = 0; i < static_cast<int>(chunk_files.size()); ++i) {
             // If any thread has already failed, skip the current iteration
-            if (!success) continue;
+            // if (!success) continue;
             
             // Get the current thread ID
             int thread_id = omp_get_thread_num();
 
             // Process the current chunk in parallel
-            if (!process_chunk_parallel(chunk_files[i], temp_files_[i], thread_id)) {
-                // If processing fails, set success to false and print an error message
-                // Used a critical section to ensure only one thread can execute this at a time
-                #pragma omp critical
-                {
-                    success = false;
-                    std::cerr << "Thread " << thread_id << " failed to process chunk " << i << std::endl;
-                }
-            }
+            process_chunk_parallel(chunk_files[i], temp_files_[i], thread_id);
+
+            // if (!process_chunk_parallel(chunk_files[i], temp_files_[i], thread_id)) {
+            //     // If processing fails, set success to false and print an error message
+            //     // Used a critical section to ensure only one thread can execute this at a time
+            //     #pragma omp critical
+            //     {
+            //         success = false;
+            //         std::cerr << "Thread " << thread_id << " failed to process chunk " << i << std::endl;
+            //     }
+            // }
         }
-        return success;
+        // return success;
+        return true;
     }
     
     /**
