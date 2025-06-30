@@ -31,7 +31,7 @@ private:
     double phase2_time_;
     
 public:
-    OpenMPExternalMergeSort(size_t memory_budget = 30720 * 1024 * 1024, // default: 30GB
+    OpenMPExternalMergeSort(size_t memory_budget = size_t(30720) * 1024 * 1024, // default: 30GB
                            size_t num_threads = 0,
                            const std::string& temp_dir = "./temp_omp") 
         : memory_budget_(memory_budget), 
