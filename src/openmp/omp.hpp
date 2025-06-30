@@ -26,15 +26,15 @@ private:
     std::vector<std::string> temp_files_; // List of temporary files created
     
     // Statistics
-    size_t total_records_processed_;
+    // size_t total_records_processed_;
     
 public:
-    OpenMPExternalMergeSort(size_t memory_budget = size_t(30720) * 1024 * 1024, // default: 30GB
+    OpenMPExternalMergeSort(size_t memory_budget = 1024 * 1024 * 1024, // default: 1GB
                            size_t num_threads = 0,
                            const std::string& temp_dir = "./temp_omp") 
         : memory_budget_(memory_budget), 
-          temp_dir_(temp_dir),
-          total_records_processed_(0)
+          temp_dir_(temp_dir)
+        //   total_records_processed_(0)
         {
         
         num_threads_ = (num_threads == 0) ? omp_get_max_threads() : num_threads;
@@ -104,7 +104,7 @@ public:
         std::cout << "[TIMING] Sorting time: " << sorting_time.count() << " s" << std::endl;
 
         t1 = Clock::now();
-        if (!parallel_merge_sorted_files(temp_files_, output_file)) {
+        if (!merge_sorted_files(temp_files_, output_file)) {
             std::cerr << "Failed to merge sorted runs" << std::endl;
             return false;
         }
@@ -113,8 +113,9 @@ public:
         std::cout << "[TIMING] Merging time: " << merging_time.count() << " s" << std::endl;
 
         double total_time = chunking_time.count() + sorting_time.count() + merging_time.count();
+        std::cout << "[TIMING] Total time: " << total_time << " s" << std::endl;
 
-        print_statistics(total_time);
+        // print_statistics(total_time);
         
         t1 = Clock::now();
         cleanup_temp_files();
@@ -188,10 +189,10 @@ private:
     bool process_chunk_parallel(const std::string& chunk_file, 
                                const std::string& temp_file,
                                int thread_id) {
-        #pragma omp critical
-        {
-            std::cout << "Thread " << thread_id << " starting chunk " << chunk_file << std::endl;
-        }
+        // #pragma omp critical
+        // {
+        //     std::cout << "Thread " << thread_id << " starting chunk " << chunk_file << std::endl;
+        // }
 
 
         std::vector<Record> records;
@@ -204,8 +205,8 @@ private:
         }
 
         // Initialize variables to track the number of bytes read and the memory usage
-        size_t bytes_read = 0;
-        size_t memory_limit_per_thread = memory_budget_ / num_threads_;
+        // size_t bytes_read = 0;
+        // size_t memory_limit_per_thread = memory_budget_ / num_threads_;
         
         // Read all records from the chunk file
         while (input.good()) {
@@ -214,18 +215,18 @@ private:
             if (!record.read_from_stream(input)) break;
             
             // Update the number of bytes read and the memory usage
-            bytes_read += record.total_size();
+            // bytes_read += record.total_size();
             
             // Check if the memory usage exceeds the limit per thread
-            if (bytes_read > memory_limit_per_thread) {
-                static bool warned = false;
-                if (!warned) {
-                    std::cerr << "Warning: Thread " << thread_id << " exceeded memory budget (" 
-                            << bytes_read << " > " << memory_limit_per_thread << " bytes)" << std::endl;
-                    warned = true;
-                }
-                // Do NOT break — continue reading the full chunk
-            }
+            // if (bytes_read > memory_limit_per_thread) {
+            //     static bool warned = false;
+            //     if (!warned) {
+            //         std::cerr << "Warning: Thread " << thread_id << " exceeded memory budget (" 
+            //                 << bytes_read << " > " << memory_limit_per_thread << " bytes)" << std::endl;
+            //         warned = true;
+            //     }
+            //     // Do NOT break — continue reading the full chunk
+            // }
             
             // Add the record to the vector of records
             records.push_back(std::move(record));
@@ -265,12 +266,12 @@ private:
         output.close();
         
         // Update the total number of records processed in a critical section
-        #pragma omp critical
-        {
-            total_records_processed_ += records.size();
-            std::cout << "Thread " << thread_id << ": Processed " << records.size() 
-                      << " records, temp file: " << temp_file << std::endl;
-        }
+        // #pragma omp critical
+        // {
+        //     total_records_processed_ += records.size();
+        //     std::cout << "Thread " << thread_id << ": Processed " << records.size() 
+        //               << " records, temp file: " << temp_file << std::endl;
+        // }
         
         return true;
     }
@@ -295,82 +296,9 @@ private:
     
     void print_statistics(double total_time) {
         std::cout << "OpenMP External Merge Sort statistics:" << std::endl;
-        std::cout << "Total records processed: " << total_records_processed_ << std::endl;
+        // std::cout << "Total records processed: " << total_records_processed_ << std::endl;
         std::cout << "Total elapsed time: " << total_time << " seconds" << std::endl;
     }
-
-
-    bool parallel_merge_sorted_files(const std::vector<std::string>& sorted_files, const std::string& output_file) {
-    std::vector<std::string> current_files = sorted_files;
-    std::vector<std::string> next_files;
-
-    size_t merge_round = 0;
-
-    while (current_files.size() > 1) {
-        next_files.clear();
-        size_t num_merges = current_files.size() / 2;
-
-        #pragma omp parallel for schedule(dynamic)
-        for (int i = 0; i < static_cast<int>(num_merges); ++i) {
-            std::string file1 = current_files[2 * i];
-            std::string file2 = current_files[2 * i + 1];
-            std::string merged_file = temp_dir_ + "/merge_" + std::to_string(merge_round) + "_" + std::to_string(i) + ".tmp";
-
-            std::ifstream in1(file1, std::ios::binary);
-            std::ifstream in2(file2, std::ios::binary);
-            std::ofstream out(merged_file, std::ios::binary);
-
-            if (!in1 || !in2 || !out) {
-                #pragma omp critical
-                std::cerr << "Failed to open one of the merge files: " << file1 << ", " << file2 << std::endl;
-                continue;
-            }
-
-            Record r1, r2;
-            bool has_r1 = r1.read_from_stream(in1);
-            bool has_r2 = r2.read_from_stream(in2);
-
-            while (has_r1 && has_r2) {
-                if (r1.key < r2.key) {
-                    r1.write_to_stream(out);
-                    has_r1 = r1.read_from_stream(in1);
-                } else {
-                    r2.write_to_stream(out);
-                    has_r2 = r2.read_from_stream(in2);
-                }
-            }
-            while (has_r1) {
-                r1.write_to_stream(out);
-                has_r1 = r1.read_from_stream(in1);
-            }
-            while (has_r2) {
-                r2.write_to_stream(out);
-                has_r2 = r2.read_from_stream(in2);
-            }
-
-            #pragma omp critical
-            {
-                next_files.push_back(merged_file);
-            }
-        }
-
-        // Handle odd leftover file (if any)
-        if (current_files.size() % 2 == 1) {
-            next_files.push_back(current_files.back());
-        }
-
-        current_files = next_files;
-        merge_round++;
-    }
-
-    // Final merge result
-    if (current_files.size() == 1) {
-        std::filesystem::rename(current_files[0], output_file);
-        return true;
-    }
-
-    return false;
-}
 };
 
 #endif // OPENMP_EXTERNAL_MERGESORT_H
