@@ -98,7 +98,9 @@ int main(int argc, char* argv[]) {
         if (fs::exists(output_file)) fs::remove(output_file);
 
         // Output only performance data (compatible with bash parsing)
-        std::cout << "[FF] Workers=" << workers
+        std::cout << "[FF] File=" << input_file
+                << "Workers=" << workers
+                << "Memory=" << memory_mb
                 << " Time=" << duration << std::endl;
     } 
     else {

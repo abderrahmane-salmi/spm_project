@@ -102,6 +102,7 @@ int main(int argc, char* argv[]) {
         // Output only performance data (file name, number of threads, time ) for CSV
         std::cout << "[OMP] File=" << input_file
                   << " Threads=" << threads
+                  << " Memory=" << memory_mb
                   << " Time=" << duration << std::endl;
 
         // std::cout << threads << "," << duration << std::endl;
