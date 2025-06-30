@@ -264,7 +264,11 @@ public:
         std::cout << "Merged chunks into final output: " << output_file << std::endl;
         std::cout << "[TIMING] Merging time: " << merging_time.count() << " s" << std::endl;
 
+        t1 = Clock::now();
         cleanup_temp_files();
+        t2 = Clock::now();
+        std::chrono::duration<double> cleanup_time = t2 - t1;
+        std::cout << "[TIMING] Cleanup temp files time: " << cleanup_time.count() << " s" << std::endl;
     }
 
 
