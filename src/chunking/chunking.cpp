@@ -84,7 +84,7 @@ std::vector<ChunkInfo> analyze_file_for_chunks(const std::string& input_file,
 std::vector<std::string> generate_chunk_files(const std::string& input_file,
     size_t memory_budget_bytes,
     const std::string& temp_dir,
-    size_t num_threads = 1
+    size_t num_threads
 ) {
     auto chunks = analyze_file_for_chunks(input_file, memory_budget_bytes, num_threads);
 
