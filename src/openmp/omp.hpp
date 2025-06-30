@@ -27,8 +27,6 @@ private:
     
     // Statistics
     size_t total_records_processed_;
-    double phase1_time_;
-    double phase2_time_;
     
 public:
     OpenMPExternalMergeSort(size_t memory_budget = size_t(30720) * 1024 * 1024, // default: 30GB
@@ -36,9 +34,8 @@ public:
                            const std::string& temp_dir = "./temp_omp") 
         : memory_budget_(memory_budget), 
           temp_dir_(temp_dir),
-          total_records_processed_(0),
-          phase1_time_(0.0),
-          phase2_time_(0.0) {
+          total_records_processed_(0)
+        {
         
         num_threads_ = (num_threads == 0) ? omp_get_max_threads() : num_threads;
         omp_set_num_threads(num_threads_);
@@ -82,12 +79,9 @@ public:
         std::cout << "Phase 1: Created " << chunk_files.size() << " chunk files." << std::endl;
         
         // PHASE 2: Sort chunks in parallel, and write to temp files
-        #pragma omp parallel num_threads(num_threads_)
-        {
-            if (!parallel_sort_chunks(chunk_files)) {
+        if (!parallel_sort_chunks(chunk_files)) {
             std::cerr << "Failed to create sorted runs" << std::endl;
             return false;
-        }
         }
         
         // PHASE 3: Merge all sorted chunks back into one sorted output
@@ -126,7 +120,7 @@ private:
         
         // Process each chunk in parallel
         // Use OpenMP to parallelize the loop
-        #pragma omp parallel for schedule(dynamic) shared(success)
+        #pragma omp parallel for schedule(dynamic, 1) shared(success)
         for (int i = 0; i < static_cast<int>(chunk_files.size()); ++i) {
             // If any thread has already failed, skip the current iteration
             if (!success) continue;
@@ -266,8 +260,6 @@ private:
     void print_statistics(double total_time) {
         std::cout << "OpenMP External Merge Sort statistics:" << std::endl;
         std::cout << "Total records processed: " << total_records_processed_ << std::endl;
-        std::cout << "Phase 1 time: " << phase1_time_ << " seconds" << std::endl;
-        std::cout << "Phase 2 time: " << phase2_time_ << " seconds" << std::endl;
         std::cout << "Total elapsed time: " << total_time << " seconds" << std::endl;
     }
 };

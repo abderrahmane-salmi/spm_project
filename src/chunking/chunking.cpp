@@ -33,7 +33,7 @@ std::vector<ChunkInfo> analyze_file_for_chunks(const std::string& input_file,
     in.seekg(0, std::ios::beg);
 
     // Ensure enough chunks for parallelism
-    size_t min_chunk_size = file_size / std::max<size_t>(1, num_threads);
+    size_t min_chunk_size = file_size / std::max<size_t>(4, num_threads * 4);
     size_t effective_chunk_budget = std::min(memory_budget_bytes, min_chunk_size);
 
     std::vector<ChunkInfo> chunks;
