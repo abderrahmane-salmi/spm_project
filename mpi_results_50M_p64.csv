@@ -1,5 +1,5 @@
 Filename,MPI_Procs,OMP_Threads,Time(s)
-data/data_50M_p64.bin,1,4,
-data/data_50M_p64.bin,2,4,172.977
-data/data_50M_p64.bin,4,4,64.4754
-data/data_50M_p64.bin,8,4,36.0019
+data/data_50M_p64.bin,1,4,172.977
+data/data_50M_p64.bin,2,4,64.8612
+data/data_50M_p64.bin,4,4,33.1204
+data/data_50M_p64.bin,8,4,16.1283
