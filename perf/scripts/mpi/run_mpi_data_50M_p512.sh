@@ -1,24 +1,25 @@
 #!/bin/bash
 
+SCRIPT_DIR="$(dirname "$0")"
+cd "$SCRIPT_DIR/../../.."
+
 INPUT="data/data_50M_p512.bin"
-MEMORY=512
-THREADS=4
-PROCS=4
+PROCS=(1 2 4 8)
+MEMORIES=(256 256 256 256)
+THREADS=(1 4 16 32)
 
-RESULTS_FILE="mpi_results_50M_p512.csv"
-ERROR_LOG="mpi_error_p4.log"
+RESULTS_FILE="$SCRIPT_DIR/mpi_results_50M_p512.csv"
+echo "Filename,MPI_Procs,Memory(MB),OMP_Threads,Time(s)" > $RESULTS_FILE
 
-echo "Running MPI with $PROCS procs and $THREADS threads on $INPUT"
+for i in "${!PROCS[@]}"; do
+    P=${PROCS[$i]}
+    M=${MEMORIES[$i]}
+    for T in "${THREADS[@]}"; do
+        echo "Running MPI=$P procs, OMP_THREADS=$T, MEM=${M}MB on $INPUT"
+        output=$(mpirun -x OMP_NUM_THREADS=$T -x OMP_DISPLAY_AFFINITY=true --bind-to none -np $P ./mpi_mergesort benchmark "$INPUT" "$M" "$T" | tail -n 1)
+        time=$(echo "$output" | grep -oP 'Time=\K[0-9.]+')
+        echo "$INPUT,$P,$M,$T,$time" >> $RESULTS_FILE
+    done
+done
 
-output=$(srun --ntasks=$PROCS --ntasks-per-node=1 --time=00:10:00 \
-              --mpi=pmix ./mpi_mergesort benchmark "$INPUT" "$MEMORY" "$THREADS" \
-              2> "$ERROR_LOG" | tail -n 1)
-
-time=$(echo "$output" | grep -oP 'Time=\K[0-9.]+')
-
-if [[ -n "$time" ]]; then
-    echo "$INPUT,$PROCS,$THREADS,$time" >> $RESULTS_FILE
-    echo "✅ Success: Appended result to $RESULTS_FILE"
-else
-    echo "❌ Error: No time recorded. Check $ERROR_LOG"
-fi
+echo "Done! Results in $RESULTS_FILE"

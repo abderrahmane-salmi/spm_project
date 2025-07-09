@@ -1,29 +1,27 @@
 #!/bin/bash
 
+SCRIPT_DIR="$(dirname "$0")"
+cd "$SCRIPT_DIR/../../.."
+
 INPUT="data/data_10M_p512.bin"
-MEMORY=256  # MB
-THREADS=(1 2 4 8 16)
+THREADS=(1 2 4 8 16 32 64)
+MEMORIES=(256 256 192 128 128)
 
-# Output file for results
-RESULTS_FILE="omp_results_10M_p512.csv"
+RESULTS_FILE="$SCRIPT_DIR/omp_results_10M_p512.csv"
 
-# CSV header
-echo "Filename,Threads,Time(s)" > $RESULTS_FILE
+echo "Filename,Threads,Memory(MB),Time(s)" > $RESULTS_FILE
 
-for T in "${THREADS[@]}"; do
-    echo "Running OpenMP with $T threads on $INPUT"
+for i in "${!THREADS[@]}"; do
+    T=${THREADS[$i]}
+    M=${MEMORIES[$i]}
+
+    echo "Running OpenMP with $T threads and $M MB on $INPUT"
     export OMP_NUM_THREADS=$T
 
-    # Run sort, capture only the last line with timing
-    output=$(./omp_mergesort benchmark "$INPUT" "$MEMORY" "$T" | tail -n 1)
-
-    # ./omp_mergesort benchmark "$INPUT" "$MEMORY" "$T" >> results/omp_data_10M_p64.csv
-
-    # Extract time from output
+    output=$(./omp_mergesort benchmark "$INPUT" "$M" "$T" | tail -n 1)
     time=$(echo "$output" | grep -oP 'Time=\K[0-9.]+')
 
-    # Append to CSV
-    echo "$INPUT,$T,$time" >> $RESULTS_FILE
+    echo "$INPUT,$T,$M,$time" >> $RESULTS_FILE
 done
 
 echo "All done! Results saved to $RESULTS_FILE"
