@@ -36,7 +36,7 @@ public:
         std::cout << "Sequential External MergeSort: input=" << input_file
                   << ", output=" << output_file << std::endl;
 
-        auto chunk_files = generate_chunk_files(input_file, memory_budget_ * 0.8, temp_dir_);
+        auto chunk_files = generate_chunk_files_sequential(input_file, memory_budget_ * 0.8, temp_dir_);
 
         temp_files_.resize(chunk_files.size());
         for (size_t i = 0; i < chunk_files.size(); ++i) {
@@ -58,6 +58,66 @@ public:
         std::cout << "Sequential sort completed in " << total_time << " seconds" << std::endl;
         return true;
     }
+
+    std::vector<std::string> generate_chunk_files_sequential(const std::string& input_file,
+                                                         size_t memory_budget_bytes,
+                                                         const std::string& temp_dir) {
+        std::ifstream in(input_file, std::ios::binary | std::ios::ate);
+        if (!in.is_open())
+            throw std::runtime_error("Cannot open input file: " + input_file);
+
+        size_t file_size = in.tellg();
+        in.seekg(0, std::ios::beg);
+
+        size_t est_chunk_size = std::min(memory_budget_bytes, file_size);
+        size_t pos = 0;
+        std::vector<std::string> chunk_files;
+        int chunk_index = 0;
+
+        while (pos < file_size) {
+            size_t chunk_start = pos;
+            size_t estimated_end = std::min(pos + est_chunk_size, file_size);
+            size_t aligned_end = estimated_end;
+
+            in.seekg(estimated_end, std::ios::beg);
+
+            // Try to align to a record boundary
+            Record dummy;
+            bool found = false;
+            for (size_t offset = 0; offset < 1024 && aligned_end < file_size; ++offset) {
+                in.clear();
+                in.seekg(aligned_end, std::ios::beg);
+                if (dummy.read_from_stream(in)) {
+                    found = true;
+                    break;
+                }
+                ++aligned_end;
+            }
+
+            if (!found)
+                aligned_end = file_size;
+
+            size_t length = aligned_end - chunk_start;
+
+            std::vector<char> buffer(length);
+            in.seekg(chunk_start, std::ios::beg);
+            in.read(buffer.data(), length);
+
+            std::string chunk_file = temp_dir + "/chunk_" + std::to_string(chunk_index++) + ".bin";
+            std::ofstream out(chunk_file, std::ios::binary);
+            if (!out.is_open())
+                throw std::runtime_error("Cannot open chunk file: " + chunk_file);
+            out.write(buffer.data(), length);
+            out.close();
+
+            chunk_files.push_back(chunk_file);
+            pos = aligned_end;
+        }
+
+        in.close();
+        return chunk_files;
+    }
+
 
 private:
     bool process_chunk(const std::string& chunk_file, const std::string& temp_file) {
