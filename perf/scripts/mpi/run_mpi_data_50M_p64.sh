@@ -5,7 +5,7 @@ cd "$SCRIPT_DIR/../../.."
 
 INPUT="data/data_50M_p64.bin"
 PROCS=(1 2 4 8)
-MEMORIES=(512 512 512 512)
+MEMORIES=(128 96 64 32)
 THREADS=(1 4 16 32)
 
 RESULTS_FILE="$SCRIPT_DIR/mpi_results_50M_p64.csv"
