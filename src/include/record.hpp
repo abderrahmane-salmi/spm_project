@@ -5,13 +5,14 @@
 #include <stdexcept>
 #include <iostream>
 
+constexpr size_t RECORD_HEADER_SIZE = 12; // 8 bytes key + 4 bytes len
 constexpr size_t PAYLOAD_MAX = 1024;
 
 // the structure of a single Record
 struct Record {
     uint64_t key;
     uint32_t len; // Length of the payload
-    std::vector<char> payload; // Use vector<char> instead of raw pointer
+    std::vector<char> payload;
 
     // Default constructor
     Record() : key(0), len(0), payload() {}
@@ -26,10 +27,10 @@ struct Record {
 
     Record(uint64_t k, const std::vector<char>& data)
     : key(k), len(static_cast<uint32_t>(data.size())), payload(data) {
-    if (len < 8 || len > PAYLOAD_MAX) {
-        throw std::invalid_argument("Payload length out of range");
+        if (len < 8 || len > PAYLOAD_MAX) {
+            throw std::invalid_argument("Payload length out of range");
+        }
     }
-}
 
     // Copy constructor, assignment operator, and destructor
     // are implicitly correct with std::vector
