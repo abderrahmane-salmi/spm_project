@@ -32,12 +32,18 @@ public:
     }
 
     bool sort_file(const std::string& input_file, const std::string& output_file) {
-        auto start_time = std::chrono::high_resolution_clock::now();
+        using Clock = std::chrono::high_resolution_clock;
         std::cout << "Sequential External MergeSort: input=" << input_file
                   << ", output=" << output_file << std::endl;
 
+        auto t1 = Clock::now();
         auto chunk_files = generate_chunk_files_sequential(input_file, memory_budget_ * 0.8, temp_dir_);
+        auto t2 = Clock::now();
+        std::cout << "Phase 1: Created " << chunk_files.size() << " chunk files." << std::endl;
+        std::chrono::duration<double> chunking_time = t2 - t1;
+        std::cout << "[TIMING] Chunking time: " << chunking_time.count() << " s" << std::endl;
 
+        t1 = Clock::now();
         temp_files_.resize(chunk_files.size());
         for (size_t i = 0; i < chunk_files.size(); ++i) {
             temp_files_[i] = temp_dir_ + "/run_" + std::to_string(i) + ".tmp";
@@ -46,16 +52,28 @@ public:
                 return false;
             }
         }
+        t2 = Clock::now();
+        std::chrono::duration<double> sorting_time = t2 - t1;
+        std::cout << "[TIMING] Sorting time: " << sorting_time.count() << " s" << std::endl;
 
+        t1 = Clock::now();
         if (!merge_sorted_files(temp_files_, output_file)) {
             std::cerr << "Merging failed!" << std::endl;
             return false;
         }
+        t2 = Clock::now();
+        std::chrono::duration<double> merging_time = t2 - t1;
+        std::cout << "[TIMING] Merging time: " << merging_time.count() << " s" << std::endl;
 
-        auto end_time = std::chrono::high_resolution_clock::now();
-        double total_time = std::chrono::duration<double>(end_time - start_time).count();
+        double total_time = chunking_time.count() + sorting_time.count() + merging_time.count();
+        std::cout << "[TIMING] Total time: " << total_time << " s" << std::endl;
 
-        std::cout << "Sequential sort completed in " << total_time << " seconds" << std::endl;
+        t1 = Clock::now();
+        cleanup_temp_files();
+        t2 = Clock::now();
+        std::chrono::duration<double> cleanup_time = t2 - t1;
+        std::cout << "[TIMING] Cleanup temp files time: " << cleanup_time.count() << " s" << std::endl;
+        
         return true;
     }
 
