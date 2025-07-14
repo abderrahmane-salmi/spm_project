@@ -12,7 +12,13 @@
 #include <filesystem>
 #include <chrono>
 #include <omp.h>
+
 #include <mutex>
+
+#include <sys/mman.h>
+#include <fcntl.h>
+#include <unistd.h>
+#include <sys/stat.h>
 
 #include "../include/record.hpp"
 #include "../include/record_io.hpp"
@@ -111,6 +117,29 @@ public:
     
 private:
 
+    int input_fd_;
+    size_t file_size_;
+    uint8_t* mapped_data_;
+
+    void map_input_file(const std::string& input_path) {
+        input_fd_ = open(input_path.c_str(), O_RDONLY);
+        if (input_fd_ < 0) throw std::runtime_error("Failed to open input file");
+
+        struct stat st;
+        if (fstat(input_fd_, &st) < 0) throw std::runtime_error("fstat failed");
+        file_size_ = st.st_size;
+
+        mapped_data_ = static_cast<uint8_t*>(
+            mmap(NULL, file_size_, PROT_READ, MAP_PRIVATE, input_fd_, 0)
+        );
+        if (mapped_data_ == MAP_FAILED) throw std::runtime_error("mmap failed");
+    }
+
+    void unmap_input_file() {
+        munmap(mapped_data_, file_size_);
+        close(input_fd_);
+    }
+
 struct ChunkMeta {
     uint64_t start_offset;
     uint64_t end_offset;
@@ -118,131 +147,72 @@ struct ChunkMeta {
     int chunk_id;
 };
 
-std::vector<ChunkMeta> analyze_file_for_chunks2(const std::string& input_path)
-{
-    std::ifstream file(input_path, std::ios::binary);
-    if (!file) {
-        throw std::runtime_error("Failed to open input file for logical chunking.");
-    }
-
-    // record start time
-    auto start_time = std::chrono::high_resolution_clock::now();
+std::vector<ChunkMeta> analyze_file_for_chunks2(const std::string& input_path) {
+    map_input_file(input_path);
 
     std::vector<ChunkMeta> chunks;
+    size_t est_size = compute_optimal_chunk_size2(input_path);
 
-    size_t estimated_chunk_size = compute_optimal_chunk_size2(input_path);
-    uint64_t current_offset = 0;
-    size_t current_chunk_size = 0;
-    ChunkMeta current_chunk{0, 0, 0, 0};
+    uint64_t offset = 0;
+    uint64_t chunk_start = 0;
+    size_t chunk_acc = 0;
 
-    std::cout << "[INFO] Estimating : estimated_chunk_size = " << estimated_chunk_size << "\n";
+    while (offset + sizeof(uint64_t) + sizeof(uint32_t) <= file_size_) {
+        // Read key
+        uint64_t key = *reinterpret_cast<uint64_t*>(mapped_data_ + offset);
+        offset += sizeof(key);
 
-    while (file) {
-        uint64_t key;
-        uint32_t len;
+        // Read length
+        uint32_t len = *reinterpret_cast<uint32_t*>(mapped_data_ + offset);
+        offset += sizeof(len);
 
-        if (!file.read(reinterpret_cast<char*>(&key), sizeof(key))) break;
-        if (!file.read(reinterpret_cast<char*>(&len), sizeof(len))) break;
-
-        size_t record_size = sizeof(key) + sizeof(len) + len;
-
-        if (current_chunk_size + record_size > estimated_chunk_size && current_chunk_size > 0) {
-            current_chunk.end_offset = current_offset;
-            current_chunk.size = current_chunk.end_offset - current_chunk.start_offset;
-            current_chunk.chunk_id = chunks.size();
-            chunks.push_back(current_chunk);
-
-            current_chunk.start_offset = current_offset;
-            current_chunk_size = 0;
+        // Sanity check on length
+        if (len < 8 || len > PAYLOAD_MAX) {
+            std::cerr << "Invalid payload length at offset " << offset - sizeof(len)
+                      << ": " << len << "\n";
+            break; // Stop parsing here to avoid undefined behavior
         }
 
-        current_offset += record_size;
-        current_chunk_size += record_size;
-        file.seekg(len, std::ios::cur);
+        // Make sure we don't read past file
+        if (offset + len > file_size_) {
+            std::cerr << "Truncated record at offset " << offset << " (len = " << len << ")\n";
+            break;
+        }
+
+        size_t rec_size = sizeof(key) + sizeof(len) + len;
+
+        // If estimated chunk size exceeded, flush the current chunk
+        if (chunk_acc + rec_size > est_size && chunk_acc > 0) {
+            chunks.push_back({
+                .start_offset = chunk_start,
+                .end_offset   = offset - sizeof(key) - sizeof(len), // go back to record start
+                .size         = (offset - sizeof(key) - sizeof(len)) - chunk_start,
+                .chunk_id     = static_cast<int>(chunks.size())
+            });
+
+            chunk_start = offset - sizeof(key) - sizeof(len);  // new chunk starts here
+            chunk_acc = 0;
+        }
+
+        offset += len;
+        chunk_acc += rec_size;
     }
 
-    if (current_chunk_size > 0) {
-        current_chunk.end_offset = current_offset;
-        current_chunk.size = current_chunk.end_offset - current_chunk.start_offset;
-        current_chunk.chunk_id = chunks.size();
-        chunks.push_back(current_chunk);
+    // Handle final chunk if any
+    if (chunk_acc > 0 && chunk_start < file_size_) {
+        chunks.push_back({
+            .start_offset = chunk_start,
+            .end_offset   = file_size_,
+            .size         = file_size_ - chunk_start,
+            .chunk_id     = static_cast<int>(chunks.size())
+        });
     }
 
-    file.close();
+    std::cout << "[INFO] Generated " << chunks.size() << " chunk"
+              << (chunks.size() == 1 ? "" : "s") << " using record-aware mmap.\n";
 
-    std::cout << "[INFO] Logical chunking complete. Generated " << chunks.size() << " chunks.\n";
-
-    // record end time
-    auto end_time = std::chrono::high_resolution_clock::now();
-    auto elapsed_time = std::chrono::duration_cast<std::chrono::seconds>(end_time - start_time);
-    std::cout << "[TIMING] Logical chunking took " << elapsed_time.count() << " s.\n";
-    
+    unmap_input_file();
     return chunks;
-}
-
-std::vector<std::string> generate_chunk_files2(const std::string& input_file)
-{
-    auto chunks = analyze_file_for_chunks2(input_file);
-    if (chunks.size() == 1)
-        return { input_file };
-
-    auto start_time = std::chrono::high_resolution_clock::now();
-
-    std::vector<std::string> chunk_files(chunks.size());
-
-    // Open the file once
-    std::ifstream in(input_file, std::ios::binary);
-    if (!in.is_open())
-        throw std::runtime_error("Cannot open input file for chunk extraction");
-
-    // Parallel write using OpenMP
-    #pragma omp parallel for schedule(static)
-    for (int i = 0; i < static_cast<int>(chunks.size()); ++i) {
-        const ChunkMeta& meta = chunks[i];
-        std::string chunk_file = temp_dir_ + "/chunk_" + std::to_string(i) + ".bin";
-        
-        // Open a private ifstream per thread
-        std::ifstream in(input_file, std::ios::binary);
-        if (!in.is_open()) {
-            #pragma omp critical
-            std::cerr << "Failed to open input file in thread " << omp_get_thread_num() << std::endl;
-            continue;
-        }
-
-        std::vector<char> buffer(meta.size);
-        in.seekg(meta.start_offset, std::ios::beg);
-        in.read(buffer.data(), meta.size);
-
-
-        // Print which thread is processing which chunk
-        #pragma omp critical
-        {
-            std::cout << "[THREAD " << omp_get_thread_num()
-                      << "] Processing chunk " << i
-                      << " (offset=" << meta.start_offset
-                      << ", size=" << meta.size << ")\n";
-        }
-
-        std::ofstream out(chunk_file, std::ios::binary);
-        if (!out.is_open()) {
-            #pragma omp critical
-            {
-                throw std::runtime_error("Failed to open output chunk file: " + chunk_file);
-            }
-        }
-        out.write(buffer.data(), meta.size);
-        out.close();
-
-        chunk_files[i] = chunk_file;
-    }
-
-    in.close();
-
-    auto end_time = std::chrono::high_resolution_clock::now();
-    auto elapsed_time = std::chrono::duration_cast<std::chrono::seconds>(end_time - start_time);
-    std::cout << "[TIMING] File chunking took " << elapsed_time.count() << " s.\n";
-
-    return chunk_files;
 }
 
 inline size_t compute_optimal_chunk_size2(const std::string& input_path) {
@@ -253,6 +223,32 @@ inline size_t compute_optimal_chunk_size2(const std::string& input_path) {
     size_t estimated_chunk_size = input_size / K;
     return estimated_chunk_size;
 }
+
+std::vector<std::string> generate_chunk_files2(const std::string& input_file) {
+        auto chunks = analyze_file_for_chunks2(input_file);
+        if (chunks.size() == 1) return {input_file};
+
+        map_input_file(input_file);
+        std::vector<std::string> chunk_files(chunks.size());
+
+        #pragma omp parallel for schedule(static)
+        for (int i = 0; i < (int)chunks.size(); ++i) {
+            const auto& m = chunks[i];
+            std::string out = temp_dir_ + "/chunk_" + std::to_string(i) + ".bin";
+            std::ofstream of{out, std::ios::binary};
+            of.write(reinterpret_cast<char*>(mapped_data_ + m.start_offset), m.size);
+            chunk_files[i] = out;
+
+            #pragma omp critical
+            std::cout << "[THREAD " << omp_get_thread_num()
+                      << "] chunk " << i
+                      << " (offset=" << m.start_offset
+                      << ", size=" << m.size << ")\n";
+        }
+
+        unmap_input_file();
+        return chunk_files;
+    }
 
 
  bool parallel_sort_chunks(const std::vector<std::string>& chunk_files) {

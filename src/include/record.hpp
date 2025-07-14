@@ -42,6 +42,7 @@ struct Record {
 
         // Sanity check
         if (len < 8 || len > PAYLOAD_MAX) {
+            std::cerr << "Invalid length: " << len << " (key=" << key << ")\n";
             in.setstate(std::ios::failbit);
             return false;
         }
