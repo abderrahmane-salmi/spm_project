@@ -147,103 +147,121 @@ struct ChunkMeta {
     int chunk_id;
 };
 
-std::vector<ChunkMeta> analyze_file_for_chunks2(const std::string& input_path) {
-    map_input_file(input_path);
+std::vector<ChunkMeta> compute_logical_chunks(const std::string& input_path) {
+    map_input_file(input_path); // Memory-map the input file for fast access
 
-    std::vector<ChunkMeta> chunks;
-    size_t est_size = compute_optimal_chunk_size2(input_path);
+    std::vector<ChunkMeta> logical_chunks;
+    size_t estimated_chunk_size = compute_optimal_chunk_size2(input_path);
 
-    uint64_t offset = 0;
+    uint64_t curr_offset = 0;
     uint64_t chunk_start = 0;
-    size_t chunk_acc = 0;
+    size_t curr_chunk_size = 0;
 
-    while (offset + sizeof(uint64_t) + sizeof(uint32_t) <= file_size_) {
-        // Read key
-        uint64_t key = *reinterpret_cast<uint64_t*>(mapped_data_ + offset);
-        offset += sizeof(key);
+    // Loop through file while we have enough bytes to read a full record header (key + length)
+    while (curr_offset + sizeof(uint64_t) + sizeof(uint32_t) <= file_size_) {
+        // Read key (8 bytes)
+        uint64_t key = *reinterpret_cast<uint64_t*>(mapped_data_ + curr_offset);
+        curr_offset += sizeof(key);
 
-        // Read length
-        uint32_t len = *reinterpret_cast<uint32_t*>(mapped_data_ + offset);
-        offset += sizeof(len);
+        // Read length (4 bytes)
+        uint32_t len = *reinterpret_cast<uint32_t*>(mapped_data_ + curr_offset);
+        curr_offset += sizeof(len);
 
-        // Sanity check on length
+        // Validate payload size
         if (len < 8 || len > PAYLOAD_MAX) {
-            std::cerr << "Invalid payload length at offset " << offset - sizeof(len)
+            std::cerr << "Invalid payload length at offset " << curr_offset - sizeof(len)
                       << ": " << len << "\n";
             break; // Stop parsing here to avoid undefined behavior
         }
 
         // Make sure we don't read past file
-        if (offset + len > file_size_) {
-            std::cerr << "Truncated record at offset " << offset << " (len = " << len << ")\n";
+        if (curr_offset + len > file_size_) {
+            std::cerr << "Error record at offset " << curr_offset << " (len = " << len << ")\n";
             break;
         }
 
+        // Compute record size
         size_t rec_size = sizeof(key) + sizeof(len) + len;
 
-        // If estimated chunk size exceeded, flush the current chunk
-        if (chunk_acc + rec_size > est_size && chunk_acc > 0) {
-            chunks.push_back({
+        // If estimated chunk size is exceeded, save the current chunk to the list and start a new chunk
+        // chunk_acc > 0 to avoid saving an empty chunk
+        if (curr_chunk_size + rec_size > estimated_chunk_size && curr_chunk_size > 0) {
+            uint64_t chunk_end = curr_offset - sizeof(key) - sizeof(len); // go back to record start (ignore last record)
+            
+            logical_chunks.push_back({
                 .start_offset = chunk_start,
-                .end_offset   = offset - sizeof(key) - sizeof(len), // go back to record start
-                .size         = (offset - sizeof(key) - sizeof(len)) - chunk_start,
-                .chunk_id     = static_cast<int>(chunks.size())
+                .end_offset   = chunk_end,
+                .size         = chunk_end - chunk_start,
+                .chunk_id     = static_cast<int>(logical_chunks.size())
             });
 
-            chunk_start = offset - sizeof(key) - sizeof(len);  // new chunk starts here
-            chunk_acc = 0;
+            // start new chunk
+            chunk_start = chunk_end;  // new chunk starts at end of previous one
+            curr_chunk_size = 0; 
         }
 
-        offset += len;
-        chunk_acc += rec_size;
+         // Advance curr_offset to skip payload
+        curr_offset += len;
+        curr_chunk_size += rec_size;
     }
 
-    // Handle final chunk if any
-    if (chunk_acc > 0 && chunk_start < file_size_) {
-        chunks.push_back({
+    // Handle final chunk if it exists (put remaining data in final chunk)
+    if (curr_chunk_size > 0 && chunk_start < file_size_) {
+        logical_chunks.push_back({
             .start_offset = chunk_start,
             .end_offset   = file_size_,
             .size         = file_size_ - chunk_start,
-            .chunk_id     = static_cast<int>(chunks.size())
+            .chunk_id     = static_cast<int>(logical_chunks.size())
         });
     }
 
-    std::cout << "[INFO] Generated " << chunks.size() << " chunk"
-              << (chunks.size() == 1 ? "" : "s") << " using record-aware mmap.\n";
+    std::cout << "[INFO] Generated " << logical_chunks.size() << " chunk"
+              << (logical_chunks.size() == 1 ? "" : "s") << " using record-aware mmap.\n";
 
     unmap_input_file();
-    return chunks;
+    return logical_chunks;
 }
 
 inline size_t compute_optimal_chunk_size2(const std::string& input_path) {
     size_t input_size = std::filesystem::file_size(input_path);
+    // Max memory one thread can use
     size_t max_chunk_size = memory_budget_ / num_threads_;
+    // min chunks needed to divide the input file so no chunk exceeds max_chunk_size
+    // ps: this is just ceiling division, but manual because we want to round up instead of down (default fun)
     size_t min_chunks_needed = (input_size + max_chunk_size - 1) / max_chunk_size;
-    size_t K = std::max(min_chunks_needed, static_cast<size_t>(num_threads_));
-    size_t estimated_chunk_size = input_size / K;
+    // ensure at least one chunk per thread
+    size_t actual_chunk_count = std::max(min_chunks_needed, static_cast<size_t>(num_threads_));
+    // final chunk size = total size divided by number of chunks
+    size_t estimated_chunk_size = input_size / actual_chunk_count;
     return estimated_chunk_size;
 }
 
 std::vector<std::string> generate_chunk_files2(const std::string& input_file) {
-        auto chunks = analyze_file_for_chunks2(input_file);
+        // get logical chunks
+        auto chunks = compute_logical_chunks(input_file);
         if (chunks.size() == 1) return {input_file};
 
+        // Map file again for chunk extraction
         map_input_file(input_file);
         std::vector<std::string> chunk_files(chunks.size());
 
+        // Parallel write using OpenMP
         #pragma omp parallel for schedule(static)
         for (int i = 0; i < (int)chunks.size(); ++i) {
-            const auto& m = chunks[i];
-            std::string out = temp_dir_ + "/chunk_" + std::to_string(i) + ".bin";
-            std::ofstream of{out, std::ios::binary};
-            of.write(reinterpret_cast<char*>(mapped_data_ + m.start_offset), m.size);
-            chunk_files[i] = out;
+            const auto& curr_chunk = chunks[i];
+            std::string output_file = temp_dir_ + "/chunk_" + std::to_string(i) + ".bin";
+            std::ofstream out{output_file, std::ios::binary};
+            // Write chunk data directly from mmap buffer
+            // Write 'curr_chunk.size' bytes starting at 'mapped_data_ + curr_chunk.start_offset' (raw pointer offset) to output file (we avoid record parsing)
+            out.write(reinterpret_cast<char*>(mapped_data_ + curr_chunk.start_offset), curr_chunk.size);
+            chunk_files[i] = output_file;
 
-            #pragma omp critical
-            std::cout << "[THREAD " << omp_get_thread_num()
-                      << "] chunk " << i
-                      << " (offset=" << m.start_offset
-                      << ", size=" << m.size << ")\n";
+            // Thread logging (debug)
+            // #pragma omp critical
+            // std::cout << "[THREAD " << omp_get_thread_num()
+            //           << "] chunk " << i
+            //           << " (offset=" << curr_chunk.start_offset
+            //           << ", size=" << curr_chunk.size << ")\n";
         }
 
         unmap_input_file();
