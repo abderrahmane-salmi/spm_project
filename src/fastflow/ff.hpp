@@ -278,36 +278,28 @@ public:
 // Coordinates the whole external merge sort: chunking, sorting, merging.
 class FastFlowExternalMergeSort {
 private:
-    size_t memory_budget; // Total memory to use per chunk
+    size_t memory_budget;
     std::string temp_dir; // Directory for temporary files
-    int num_workers; // Number of parallel workers
+    int num_workers;
 
 public:
-    // Constructor: sets memory and workers, creates temp directory
     FastFlowExternalMergeSort(size_t memory_budget_bytes = 256 * 1024 * 1024, int workers = 4)
         : memory_budget(memory_budget_bytes), num_workers(workers) {
         temp_dir = "temp_ff_" + std::to_string(getpid());
         fs::create_directory(temp_dir);
     }
 
-    // Destructor: removes temp files
     ~FastFlowExternalMergeSort() {
         cleanup_temp_files();
     }
 
     /**
-     * Main entry point to sort an input file and save the sorted result.
-     *
-     * This function coordinates the external merge sort process using FastFlow.
-     * It performs the following steps:
-     * 1. Splits the input file into smaller chunks.
-     * 2. Sorts the chunks in parallel using FastFlow Farm.
-     * 3. Merges the sorted chunks into a single sorted output file.
-     * 4. Cleans up temporary files created during the process.
-     *
-     * @param input_file The path to the input file to be sorted.
-     * @param output_file The path to the file where the sorted result will be saved.
-    */
+     * Main function to sort the input file.
+     * Steps:
+     * 1. Chunk the input file (ChunkEmitter)
+     * 2. Sort chunks in parallel (ChunkWorker)
+     * 3. Merge sorted chunks into a final output file (ChunkCollector)
+     */
     void sort_file(const std::string& input_file, const std::string& output_file) {
         using Clock = std::chrono::high_resolution_clock;
 
@@ -317,6 +309,7 @@ public:
 
         auto t_start = Clock::now();
 
+        // Create emitter and collector
         ChunkEmitter emitter(input_file, temp_dir, num_workers, memory_budget);
         ChunkCollector collector(output_file);
 
@@ -357,4 +350,4 @@ private:
     }
 };
 
-#endif // FASTFLOW_MERGESORT_HPP
+#endif
