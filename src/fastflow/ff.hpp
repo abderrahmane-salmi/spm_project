@@ -3,6 +3,7 @@
 
 #include <ff/ff.hpp>
 #include <ff/farm.hpp>
+#include <ff/utils.hpp>
 #include <vector>
 #include <string>
 #include <fstream>
@@ -307,7 +308,7 @@ public:
         std::cout << "Memory budget: " << (memory_budget / 1024 / 1024) << " MB" << std::endl;
         std::cout << "Workers: " << num_workers << std::endl;
 
-        auto t_start = Clock::now();
+        ff::ffTime(ff::START_TIME);
 
         // Create emitter and collector
         ChunkEmitter emitter(input_file, temp_dir, num_workers, memory_budget);
@@ -331,12 +332,9 @@ public:
             std::cerr << "FastFlow farm execution failed!" << std::endl;
             return;
         }
-        auto t2 = Clock::now();
 
-        std::chrono::duration<double> total_time = t2 - t_start;
-        std::chrono::duration<double> sort_time = t2 - t1;
-        std::cout << "[TIMING] Sorting + Merging time: " << sort_time.count() << " s" << std::endl;
-        std::cout << "[TIMING] Total time: " << total_time.count() << " s" << std::endl;
+        double elapsed_ms = ff::ffTime(ff::STOP_TIME);
+        std::cout << "[TIMING] Total sorting + merging time: " << (elapsed_ms / 1000.0) << " s" << std::endl;
 
         cleanup_temp_files();
     }
