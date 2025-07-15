@@ -35,7 +35,7 @@ struct ChunkTask {
 // ------------------------
 // FastFlow Node: Chunk Emitter
 // ------------------------
-// Distributes chunk sorting tasks to workers
+// Divide the input file into logical chunks and send each chunk to a worker to process it
 class ChunkEmitter : public ff_node {
 private:
     const std::string input_file_;
@@ -51,64 +51,117 @@ public:
         : input_file_(infile), temp_dir_(temp_dir), num_workers_(num_workers) {
         safe_budget_ = static_cast<size_t>(memory_budget * 0.8);
         per_worker_budget_ = safe_budget_ / num_workers_;
-        // memory-map input
-        int fd = open(input_file_.c_str(), O_RDONLY);
-        if (fd < 0) throw std::runtime_error("open input failed");
-        struct stat st;
-        fstat(fd, &st);
-        file_size_ = st.st_size;
-        mmap_ptr_ = static_cast<uint8_t*>(mmap(nullptr, file_size_, PROT_READ, MAP_PRIVATE, fd, 0));
-        close(fd);
-        if (mmap_ptr_ == MAP_FAILED) throw std::runtime_error("mmap failed");
+        map_input_file(infile);
     }
 
     ~ChunkEmitter() {
         munmap(mmap_ptr_, file_size_);
     }
 
-    /**
-     * This service function is called by FastFlow for each item in the input stream.
-     * In this case, it emits a SortTask for each chunk file in the input list.
-     * On each svc() call, it sends a SortTask to a worker.
-     * 
-     * @return A SortTask for the next chunk file, or EOS to signal end of stream.
-     */
+    void map_input_file(const std::string& input_path) {
+        // Open the input file in read-only mode
+        int file_descriptor = open(input_file_.c_str(), O_RDONLY);
+        if (file_descriptor < 0) throw std::runtime_error("open input failed");
+
+        // Retrieve the file's metadata (ex: size) using fstat
+        struct stat st;
+        fstat(file_descriptor, &st);
+        file_size_ = st.st_size;
+
+        // Memory-map the entire file into the process's address space
+        // mmap returns a pointer to the mapped memory region
+        // - NULL: Let the OS choose the address
+        // - file_size_: Map the entire file
+        // - PROT_READ: Pages are read-only
+        // - MAP_PRIVATE: Changes are private (copy-on-write, not visible to other processes)
+        // - file_descriptor: File descriptor
+        // - 0: Offset in file (start at beginning)
+        mmap_ptr_ = static_cast<uint8_t*>(
+            mmap(nullptr, file_size_, PROT_READ, MAP_PRIVATE, file_descriptor, 0)
+        );
+        close(file_descriptor);
+        if (mmap_ptr_ == MAP_FAILED) throw std::runtime_error("mmap failed");
+    }
+
     void* svc(void*) override {
-        size_t est_chunks = std::max<size_t>(
-            (file_size_ + per_worker_budget_ - 1) / per_worker_budget_,
+        // Estimate the number of chunks needed
+        size_t estimated_chunk_count = std::max<size_t>(
+            (file_size_ + per_worker_budget_ - 1) / per_worker_budget_, // ceiling division because we want to round up not down (so we don't miss any chunks)
             num_workers_
         );
-        size_t est_size = file_size_ / est_chunks;
+        size_t target_chunk_size = file_size_ / estimated_chunk_count;
 
-        size_t offset = 0, start = 0, acc = 0;
-        int id = 0;
+        size_t current_offset = 0; 
+        size_t curr_chunk_start_offset = 0;   
+        size_t curr_chunk_accumulated_size = 0; 
+        int curr_chunk_id = 0;
 
-        while (offset + sizeof(uint64_t) + sizeof(uint32_t) <= file_size_) {
-            uint64_t key = *reinterpret_cast<uint64_t*>(mmap_ptr_ + offset);
-            offset += sizeof(key);
-            uint32_t len = *reinterpret_cast<uint32_t*>(mmap_ptr_ + offset);
-            offset += sizeof(len);
-            if (len < 8 || len > PAYLOAD_MAX) break;
-            if (offset + len > file_size_) break;
-            size_t recsz = sizeof(key) + sizeof(len) + len;
-            if (acc + recsz > est_size && acc > 0) {
-                ChunkTask* tk = new ChunkTask{id, mmap_ptr_ + start, offset - sizeof(key) - sizeof(len) - start,
-                                              fs::path(temp_dir_) / ("chunk_" + std::to_string(id) + ".bin")};
-                ff_send_out(tk);
-                id++;
-                start = offset - sizeof(key) - sizeof(len);
-                acc = 0;
+        // Loop through file while we have enough bytes to read a full record header (key + length)
+        while (current_offset + sizeof(uint64_t) + sizeof(uint32_t) <= file_size_) {
+            // read key (8 bytes)
+            uint64_t key = *reinterpret_cast<uint64_t*>(mmap_ptr_ + current_offset);
+            current_offset += sizeof(key);
+
+            // read payload length (4 bytes)
+            uint32_t payload_len = *reinterpret_cast<uint32_t*>(mmap_ptr_ + current_offset);
+            current_offset += sizeof(payload_len);
+
+            // Validate payload size
+            if (payload_len < 8 || payload_len > PAYLOAD_MAX) {
+                std::cerr << "Invalid payload length at offset " << current_offset - sizeof(payload_len)
+                      << ": " << payload_len << "\n";
+                break;
             }
-            offset += len;
-            acc += recsz;
+            
+            // Make sure we don't read past file
+            if (current_offset + payload_len > file_size_) {
+                std::cerr << "Error record at offset " << current_offset << " (len = " << payload_len << ")\n";
+                break;
+            }
+
+            // Compute record size
+            size_t record_size = sizeof(key) + sizeof(payload_len) + payload_len;
+
+            // If estimated chunk size is exceeded, save the current chunk to the list and start a new chunk
+            // chunk_acc > 0 to avoid saving an empty chunk
+            if (curr_chunk_accumulated_size + record_size > target_chunk_size && curr_chunk_accumulated_size > 0) {
+                auto chunk_output_path = fs::path(temp_dir_) / ("chunk_" + std::to_string(curr_chunk_id) + ".bin");
+                auto* task = new ChunkTask{
+                    curr_chunk_id,
+                    mmap_ptr_ + curr_chunk_start_offset,
+                    current_offset - sizeof(key) - sizeof(payload_len) - curr_chunk_start_offset, // size of current chunk
+                    chunk_output_path.string()
+                };
+
+                // Send this task to one of the available workers for processing
+                ff_send_out(task); 
+                
+                // Start a new chunk
+                curr_chunk_id++;
+                curr_chunk_start_offset = current_offset - sizeof(key) - sizeof(payload_len); // restart chunk
+                curr_chunk_accumulated_size = 0;
+            }
+
+            // Move to the next record (advance offset to skip payload)
+            current_offset += payload_len;
+            curr_chunk_accumulated_size += record_size;
         }
-        if (acc > 0 && start < file_size_) {
-            ChunkTask* tk = new ChunkTask{id, mmap_ptr_ + start, file_size_ - start,
-                                          fs::path(temp_dir_) / ("chunk_" + std::to_string(id) + ".bin")};
-            ff_send_out(tk);
-            id++;
+
+        // Handle final chunk if it exists (put remaining data in final chunk)
+        if (curr_chunk_accumulated_size > 0 && curr_chunk_start_offset < file_size_) {
+            auto chunk_output_path = fs::path(temp_dir_) / ("chunk_" + std::to_string(curr_chunk_id) + ".bin");
+            auto* task = new ChunkTask{
+                curr_chunk_id,
+                mmap_ptr_ + curr_chunk_start_offset,
+                file_size_ - curr_chunk_start_offset,
+                chunk_output_path.string()
+            };
+
+            // Send this task to one of the available workers for processing
+            ff_send_out(task);
         }
-        return EOS;
+
+        return EOS; // End of stream
     }
 };
 
