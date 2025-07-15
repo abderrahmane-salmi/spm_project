@@ -34,12 +34,11 @@ private:
     std::vector<std::string> temp_files_; // List of temporary files created
     
 public:
-    OpenMPExternalMergeSort(size_t memory_budget = 28 * 1024 * 1024 * 1024, // default: 1GB
+    OpenMPExternalMergeSort(size_t memory_budget = 28 * 1024 * 1024 * 1024, // default
                            size_t num_threads = 0,
                            const std::string& temp_dir = "./temp_omp") 
         : memory_budget_(memory_budget), 
           temp_dir_(temp_dir)
-        //   total_records_processed_(0)
         {
         
         // set number of threads
@@ -48,7 +47,7 @@ public:
 
         max_memory_per_thread_ = memory_budget_ / num_threads_;
 
-        // confirm
+        // confirm we are using the specified the num of threads
         // int max_threads = omp_get_max_threads();
         // #pragma omp parallel
         // {
@@ -61,10 +60,6 @@ public:
 
 
         std::filesystem::create_directories(temp_dir_);
-        
-        std::cout << "OpenMP MergeSort initialized with " << num_threads_ 
-                  << " threads, memory budget: " << (memory_budget_ / (1024*1024)) 
-                  << " MB" << std::endl;
     }
     
     // === Destructor ===
@@ -77,9 +72,11 @@ public:
 
         auto file_size_bytes = std::filesystem::file_size(input_file);
         double file_size_mb = static_cast<double>(file_size_bytes) / (1024 * 1024);
-        std::cout << "Starting OpenMP external merge sort..." << std::endl;
-        std::cout << "Input: " << input_file << " (" << file_size_mb << " MB)" << std::endl;
-        std::cout << "Output: " << output_file << std::endl;
+        std::cout << "Starting OpenMP external merge sort..."
+                << "memory budget: " << (memory_budget_ / (1024*1024)) << " MB"
+                << "num threads: " << num_threads_
+                << "Input: " << input_file << " (" << file_size_mb << " MB)" 
+                << "Output: " << output_file << std::endl;
 
         auto t1 = Clock::now();
         auto chunk_files = generate_chunk_files_(input_file);
@@ -108,8 +105,6 @@ public:
 
         double total_time = chunking_time.count() + sorting_time.count() + merging_time.count();
         std::cout << "[TIMING] Total time: " << total_time << " s" << std::endl;
-
-        // print_statistics(total_time);
         
         t1 = Clock::now();
         cleanup_temp_files();
@@ -126,20 +121,32 @@ private:
     size_t file_size_;
     uint8_t* mapped_data_;
 
+    // use mmap() to map the input file into memory, which allows very fast access without copying the whole file into a buffer
     void map_input_file(const std::string& input_path) {
+        // Open the input file in read-only mode
         input_fd_ = open(input_path.c_str(), O_RDONLY);
         if (input_fd_ < 0) throw std::runtime_error("Failed to open input file");
 
+        // Retrieve the file's metadata (ex: size) using fstat
         struct stat st;
         if (fstat(input_fd_, &st) < 0) throw std::runtime_error("fstat failed");
         file_size_ = st.st_size;
 
+        // Memory-map the entire file into the process's address space
+        // mmap returns a pointer to the mapped memory region
+        // - NULL: Let the OS choose the address
+        // - file_size_: Map the entire file
+        // - PROT_READ: Pages are read-only
+        // - MAP_PRIVATE: Changes are private (copy-on-write, not visible to other processes)
+        // - input_fd_: File descriptor
+        // - 0: Offset in file (start at beginning)
         mapped_data_ = static_cast<uint8_t*>(
             mmap(NULL, file_size_, PROT_READ, MAP_PRIVATE, input_fd_, 0)
         );
         if (mapped_data_ == MAP_FAILED) throw std::runtime_error("mmap failed");
     }
 
+    // unmap the input file from memory and close the file descriptor
     void unmap_input_file() {
         munmap(mapped_data_, file_size_);
         close(input_fd_);
@@ -157,9 +164,6 @@ std::vector<ChunkMeta> compute_logical_chunks(const std::string& input_path) {
 
     std::vector<ChunkMeta> logical_chunks;
     size_t estimated_chunk_size = compute_est_chunk_size(input_path);
-
-    // std::cout << "Estimated chunk size: " << (estimated_chunk_size /= (1024*1024)) << " MB" << std::endl;
-
     uint64_t curr_offset = 0;
     uint64_t chunk_start = 0;
     size_t curr_chunk_size = 0;
@@ -207,7 +211,7 @@ std::vector<ChunkMeta> compute_logical_chunks(const std::string& input_path) {
             curr_chunk_size = 0; 
         }
 
-         // Advance curr_offset to skip payload
+        // Advance curr_offset to skip payload
         curr_offset += len;
         curr_chunk_size += rec_size;
     }
@@ -280,53 +284,21 @@ std::vector<std::string> generate_chunk_files_(const std::string& input_file) {
             temp_files_[i] = temp_dir_ + "/run_" + std::to_string(i) + ".tmp";
         }
         
-        // bool success = true;
-        
         // Process each chunk in parallel
-        // Use OpenMP to parallelize the loop
-        // #pragma omp parallel for schedule(dynamic, 1) shared(success)
         #pragma omp parallel 
         {
             #pragma omp for schedule(dynamic)
             for (int i = 0; i < static_cast<int>(chunk_files.size()); ++i) {
-                // If any thread has already failed, skip the current iteration
-                // if (!success) continue;
-                
-                // Get the current thread ID
-                int thread_id = omp_get_thread_num();
-
                 // Process the current chunk in parallel
+                int thread_id = omp_get_thread_num();
                 process_chunk_parallel(chunk_files[i], temp_files_[i], thread_id);
-
-                // if (!process_chunk_parallel(chunk_files[i], temp_files_[i], thread_id)) {
-                //     // If processing fails, set success to false and print an error message
-                //     // Used a critical section to ensure only one thread can execute this at a time
-                //     #pragma omp critical
-                //     {
-                //         success = false;
-                //         std::cerr << "Thread " << thread_id << " failed to process chunk " << i << std::endl;
-                //     }
-                // }
             }
         }
         
-        // return success;
         return true;
     }
     
-    /**
-     * Sort and write a single chunk to a temp file
-     * 
-     * This function reads a specific chunk of the input file, sorts the records within it,
-     * and writes the sorted records to a temporary file. It ensures that the memory usage
-     * per thread does not exceed the specified memory budget.
-     * 
-     * @param chunk_file Path to the chunk file (already extracted from the input).
-     * @param temp_file The path to the temporary file where sorted records will be written.
-     * @param thread_id The ID of the thread processing the chunk, used for logging.
-     * @return true if the chunk was processed successfully, false otherwise.
-     */
-
+    // Sort the records within a single chunk and write the sorted records to a temp file
     bool process_chunk_parallel(const std::string& chunk_file, 
                                const std::string& temp_file,
                                int thread_id) {
@@ -350,13 +322,10 @@ std::vector<std::string> generate_chunk_files_(const std::string& input_file) {
         // Read all records from the chunk file
         while (input.good()) {
             Record record;
-            // If a record cannot be read, break out of the loop
             if (!record.read_from_stream(input)) break;
             
-            // Update the number of bytes read and the memory usage
+            // Check if the memory usage exceeds the memory limit per thread
             bytes_read += record.total_size();
-            
-            // Check if the memory usage exceeds the limit per thread
             if (bytes_read > max_memory_per_thread_) {
                 static bool warned = false;
                 if (!warned) {
@@ -372,7 +341,6 @@ std::vector<std::string> generate_chunk_files_(const std::string& input_file) {
             records.push_back(std::move(record));
         }
 
-        // Close the input file
         input.close();
         
         // Check if any records were read
@@ -387,7 +355,7 @@ std::vector<std::string> generate_chunk_files_(const std::string& input_file) {
                      return a.key < b.key;
                  });
         
-        // Open the temporary file in binary mode
+        // Open the temporary file
         std::ofstream output(temp_file, std::ios::binary);
         if (!output) {
             std::cerr << "Thread " << thread_id << ": Failed to create temp file: " << temp_file << std::endl;
@@ -402,27 +370,11 @@ std::vector<std::string> generate_chunk_files_(const std::string& input_file) {
             }
         }
 
-        // Close the output file
         output.close();
-        
-        // Update the total number of records processed in a critical section
-        // #pragma omp critical
-        // {
-        //     total_records_processed_ += records.size();
-        //     std::cout << "Thread " << thread_id << ": Processed " << records.size() 
-        //               << " records, temp file: " << temp_file << std::endl;
-        // }
-        
         return true;
     }
     
-    /**
-     * Deletes temporary files created during processing.
-     * Iterates through the list of temporary files and attempts to remove each one.
-     * If a file cannot be deleted, a warning message is logged.
-     * Clears the list of temporary files after attempting to delete them.
-     */
-
+    // Deletes temporary files created during processing.
     void cleanup_temp_files() {
         for (const auto& file : temp_files_) {
             std::error_code ec;
@@ -435,4 +387,4 @@ std::vector<std::string> generate_chunk_files_(const std::string& input_file) {
     }
 };
 
-#endif // OPENMP_EXTERNAL_MERGESORT_H
+#endif
