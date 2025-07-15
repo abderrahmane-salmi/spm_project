@@ -33,11 +33,14 @@ public:
 
     bool sort_file(const std::string& input_file, const std::string& output_file) {
         using Clock = std::chrono::high_resolution_clock;
+
+        auto file_size_bytes = std::filesystem::file_size(input_file);
+        double file_size_mb = static_cast<double>(file_size_bytes) / (1024 * 1024);
         std::cout << "Sequential External MergeSort: input=" << input_file
-                  << ", output=" << output_file << std::endl;
+            << " (" << file_size_mb << " MB), output=" << output_file << std::endl;
 
         auto t1 = Clock::now();
-        auto chunk_files = generate_chunk_files_sequential(input_file, memory_budget_ * 0.8, temp_dir_);
+        auto chunk_files = generate_chunk_files_sequential(input_file);
         auto t2 = Clock::now();
         std::cout << "Phase 1: Created " << chunk_files.size() << " chunk files." << std::endl;
         std::chrono::duration<double> chunking_time = t2 - t1;
@@ -77,67 +80,114 @@ public:
         return true;
     }
 
-    std::vector<std::string> generate_chunk_files_sequential(const std::string& input_file,
-                                                         size_t memory_budget_bytes,
-                                                         const std::string& temp_dir) {
-        std::ifstream in(input_file, std::ios::binary | std::ios::ate);
-        if (!in.is_open())
-            throw std::runtime_error("Cannot open input file: " + input_file);
 
-        size_t file_size = in.tellg();
-        in.seekg(0, std::ios::beg);
+private:
+    struct ChunkMeta {
+        uint64_t start_offset;
+        uint64_t end_offset;
+        size_t size;
+        int chunk_id;
+    };
 
-        size_t est_chunk_size = std::min(memory_budget_bytes, file_size);
-        size_t pos = 0;
-        std::vector<std::string> chunk_files;
-        int chunk_index = 0;
-
-        while (pos < file_size) {
-            size_t chunk_start = pos;
-            size_t estimated_end = std::min(pos + est_chunk_size, file_size);
-            size_t aligned_end = estimated_end;
-
-            in.seekg(estimated_end, std::ios::beg);
-
-            // Try to align to a record boundary
-            Record dummy;
-            bool found = false;
-            for (size_t offset = 0; offset < 1024 && aligned_end < file_size; ++offset) {
-                in.clear();
-                in.seekg(aligned_end, std::ios::beg);
-                if (dummy.read_from_stream(in)) {
-                    found = true;
-                    break;
-                }
-                ++aligned_end;
-            }
-
-            if (!found)
-                aligned_end = file_size;
-
-            size_t length = aligned_end - chunk_start;
-
-            std::vector<char> buffer(length);
-            in.seekg(chunk_start, std::ios::beg);
-            in.read(buffer.data(), length);
-
-            std::string chunk_file = temp_dir + "/chunk_" + std::to_string(chunk_index++) + ".bin";
-            std::ofstream out(chunk_file, std::ios::binary);
-            if (!out.is_open())
-                throw std::runtime_error("Cannot open chunk file: " + chunk_file);
-            out.write(buffer.data(), length);
-            out.close();
-
-            chunk_files.push_back(chunk_file);
-            pos = aligned_end;
+    // Compute record-aligned chunk boundaries (logical chunks)
+    std::vector<ChunkMeta> compute_logical_chunks_sequential(const std::string& input_path) {
+        std::ifstream input(input_path, std::ios::binary);
+        if (!input.is_open()) {
+            throw std::runtime_error("Failed to open input file");
         }
 
-        in.close();
+        std::vector<ChunkMeta> logical_chunks;
+        uint64_t curr_offset = 0;
+        uint64_t chunk_start = 0;
+        size_t curr_chunk_size = 0;
+
+        while (input.peek() != EOF) {
+            std::streampos record_start = input.tellg();
+
+            uint64_t key;
+            uint32_t len;
+
+            // Read key (8 bytes)
+            if (!input.read(reinterpret_cast<char*>(&key), sizeof(key))) break;
+
+            // Read length (4 bytes)
+            if (!input.read(reinterpret_cast<char*>(&len), sizeof(len))) break;
+
+            // Validate payload length
+            if (len < 8 || len > PAYLOAD_MAX) {
+                std::cerr << "Invalid record length: " << len << " at offset " << curr_offset << std::endl;
+                break;
+            }
+
+            size_t rec_size = sizeof(key) + sizeof(len) + len;
+
+            // Skip payload
+            if (!input.seekg(len, std::ios::cur)) break;
+
+            curr_offset = static_cast<uint64_t>(input.tellg());
+            curr_chunk_size += rec_size;
+
+            if (curr_chunk_size > memory_budget_) {
+                logical_chunks.push_back({
+                    .start_offset = chunk_start,
+                    .end_offset = static_cast<uint64_t>(record_start),
+                    .size = static_cast<size_t>(static_cast<uint64_t>(record_start) - chunk_start),
+                    .chunk_id = static_cast<int>(logical_chunks.size())
+                });
+
+                chunk_start = static_cast<uint64_t>(record_start);
+                curr_chunk_size = rec_size;  // start next chunk with current record
+            }
+        }
+
+        // Final chunk
+        if (chunk_start < curr_offset) {
+            logical_chunks.push_back({
+                .start_offset = chunk_start,
+                .end_offset = curr_offset,
+                .size = curr_offset - chunk_start,
+                .chunk_id = static_cast<int>(logical_chunks.size())
+            });
+        }
+
+        input.close();
+        return logical_chunks;
+    }
+
+    // Generate chunk files based on logical chunks
+    std::vector<std::string> generate_chunk_files_sequential(const std::string& input_file) {
+        auto logical_chunks = compute_logical_chunks_sequential(input_file);
+        std::vector<std::string> chunk_files;
+
+        std::ifstream input(input_file, std::ios::binary);
+        if (!input.is_open()) {
+            throw std::runtime_error("Failed to reopen input file for reading chunks");
+        }
+
+        for (const auto& chunk : logical_chunks) {
+            std::string chunk_path = temp_dir_ + "/chunk_" + std::to_string(chunk.chunk_id) + ".bin";
+            std::ofstream out(chunk_path, std::ios::binary);
+            if (!out) {
+                throw std::runtime_error("Failed to create chunk file: " + chunk_path);
+            }
+
+            input.seekg(chunk.start_offset, std::ios::beg);
+
+            std::vector<char> buffer(chunk.size);
+            if (!input.read(buffer.data(), chunk.size)) {
+                throw std::runtime_error("Failed to read chunk data");
+            }
+
+            out.write(buffer.data(), chunk.size);
+            out.close();
+            chunk_files.push_back(chunk_path);
+        }
+
+        input.close();
         return chunk_files;
     }
 
 
-private:
     bool process_chunk(const std::string& chunk_file, const std::string& temp_file) {
         std::ifstream input(chunk_file, std::ios::binary);
         if (!input.is_open()) {
@@ -147,9 +197,9 @@ private:
 
         std::vector<Record> records;
         while (input.good()) {
-            Record r;
-            if (!r.read_from_stream(input)) break;
-            records.push_back(std::move(r));
+            Record record;
+            if (!record.read_from_stream(input)) break;
+            records.push_back(std::move(record));
         }
         input.close();
 
@@ -158,8 +208,8 @@ private:
         });
 
         std::ofstream output(temp_file, std::ios::binary);
-        for (const auto& r : records) {
-            if (!r.write_to_stream(output)) {
+        for (const auto& record : records) {
+            if (!record.write_to_stream(output)) {
                 std::cerr << "Failed to write record to " << temp_file << std::endl;
                 return false;
             }
