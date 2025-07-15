@@ -171,7 +171,7 @@ std::vector<ChunkMeta> compute_logical_chunks(const std::string& input_path) {
 
     // Loop through file while we have enough bytes to read a full record header (key + length)
     while (curr_offset + sizeof(uint64_t) + sizeof(uint32_t) <= file_size_) {
-        // Read key (8 bytes)
+        // Read key (8 bytes) (via pointer casting and dereferencing)
         uint64_t key = *reinterpret_cast<uint64_t*>(mapped_data_ + curr_offset);
         curr_offset += sizeof(key);
 

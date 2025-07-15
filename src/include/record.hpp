@@ -20,6 +20,7 @@ struct Record {
     // Constructor with key, length, and payload data
     Record(uint64_t k, uint32_t l, const char* p)
         : key(k), len(l), payload(p, p + l) {
+        // payload(p, p + l): copies the "len" bytes starting from p into the payload vector
         if (len < 8 || len > PAYLOAD_MAX) {
             throw std::invalid_argument("Payload length out of range");
         }

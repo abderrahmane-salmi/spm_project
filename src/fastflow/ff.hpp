@@ -165,47 +165,72 @@ public:
     }
 };
 
-class ChunkPipeline : public ff_node {
+// ------------------------
+// FastFlow Node: Chunk Worker
+// ------------------------
+// Parse records from the chunk, sort them, write a sorted temp file, send it to the collector for merge
+class ChunkWorker : public ff_node {
 private:
-    size_t per_worker_budget_;
+    size_t memory_budget_per_worker_;
+
 public:
-    ChunkPipeline(size_t per_worker_budget) : per_worker_budget_(per_worker_budget) {}
+    ChunkWorker(size_t memory_budget_per_worker)
+        : memory_budget_per_worker_(memory_budget_per_worker) {}
 
-    void* svc(void* t) override {
-        auto *tk = static_cast<ChunkTask*>(t);
+    void* svc(void* task_ptr) override {
+        auto* chunk_task = static_cast<ChunkTask*>(task_ptr);
 
-        // Parse
-        std::vector<Record> records;
-        size_t bytes = 0;
-        size_t offset = 0;
-        while (offset + sizeof(uint64_t) + sizeof(uint32_t) <= tk->size) {
-            uint64_t key = *reinterpret_cast<uint64_t*>(tk->data + offset);
-            offset += sizeof(key);
-            uint32_t len = *reinterpret_cast<uint32_t*>(tk->data + offset);
-            offset += sizeof(len);
-            if (len < 8 || len > PAYLOAD_MAX || offset + len > tk->size) break;
-            Record r(key, len, reinterpret_cast<char*>(tk->data + offset));
-            offset += len;
-            bytes += r.total_size();
-            if (bytes > per_worker_budget_) {
-                std::cerr << "[warn] worker " << tk->chunk_id
-                          << " exceeded budget\n";
+        // --- Step 1: Parse records from the chunk ---
+        std::vector<Record> parsed_records;
+        size_t total_bytes_read = 0;
+        size_t offset_in_chunk = 0;
+
+        // Loop through the chunk buffer and extract records
+        while (offset_in_chunk + sizeof(uint64_t) + sizeof(uint32_t) <= chunk_task->size) {
+            // Read key (8 bytes) (via pointer casting and dereferencing)
+            uint64_t key = *reinterpret_cast<uint64_t*>(chunk_task->data + offset_in_chunk);
+            offset_in_chunk += sizeof(key);
+
+            // Read payload length (4 bytes)
+            uint32_t payload_len = *reinterpret_cast<uint32_t*>(chunk_task->data + offset_in_chunk);
+            offset_in_chunk += sizeof(payload_len);
+
+            // Validate payload length
+            if (payload_len < 8 || payload_len > PAYLOAD_MAX || offset_in_chunk + payload_len > chunk_task->size)
+                break;
+
+            // Create a Record object from parsed data
+            Record record(key, payload_len, reinterpret_cast<char*>(chunk_task->data + offset_in_chunk));
+            offset_in_chunk += payload_len;
+
+            total_bytes_read += record.total_size();
+
+            // Stop if this chunk exceeds the per-worker memory budget
+            if (total_bytes_read > memory_budget_per_worker_) {
+                std::cerr << "[warn] Worker for chunk " << chunk_task->chunk_id
+                          << " exceeded its memory budget\n";
                 break;
             }
-            records.push_back(std::move(r));
+
+            parsed_records.push_back(std::move(record));
         }
 
-        // Sort
-        std::sort(records.begin(), records.end(),
-                  [](auto& a, auto& b){ return a.key < b.key; });
+        // --- Step 2: Sort parsed records by their key ---
+        std::sort(parsed_records.begin(), parsed_records.end(),
+                  [](const Record& a, const Record& b) {
+                      return a.key < b.key;
+                  });
 
-        // Write
-        std::ofstream ofs(tk->output_path, std::ios::binary);
-        for (auto& r : records) {
-            r.write_to_stream(ofs);
+        // --- Step 3: Write sorted records to output file ---
+        std::ofstream output_file(chunk_task->output_path, std::ios::binary);
+        for (const auto& record : parsed_records) {
+            record.write_to_stream(output_file);
         }
-        // delete tk;
-        return tk;
+
+        // Optional: clean up the task if no longer needed
+        // delete task;
+
+        return chunk_task;  // Return to collector
     }
 };
 
@@ -288,7 +313,7 @@ public:
         // Create Workers
         std::vector<ff_node*> workers_v;
         for (int i = 0; i < num_workers; ++i) {
-            workers_v.push_back(new ChunkPipeline(memory_budget / num_workers));
+            workers_v.push_back(new ChunkWorker(memory_budget / num_workers));
         }
 
         // Set up FastFlow farm
