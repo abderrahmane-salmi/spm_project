@@ -68,50 +68,51 @@ public:
     }
 
     bool sort_file(const std::string& input_file, const std::string& output_file) {
-        using Clock = std::chrono::high_resolution_clock;
-
         auto file_size_bytes = std::filesystem::file_size(input_file);
         double file_size_mb = static_cast<double>(file_size_bytes) / (1024 * 1024);
-        std::cout << "Starting OpenMP external merge sort..."
-                << "memory budget: " << (memory_budget_ / (1024*1024)) << " MB"
-                << "num threads: " << num_threads_
-                << "Input: " << input_file << " (" << file_size_mb << " MB)" 
+
+        std::cout << "Starting OpenMP external merge sort...\n"
+                << "Memory budget: " << (memory_budget_ / (1024 * 1024)) << " MB\n"
+                << "Num threads: " << num_threads_ << "\n"
+                << "Input: " << input_file << " (" << file_size_mb << " MB)\n"
                 << "Output: " << output_file << std::endl;
 
-        auto t1 = Clock::now();
-        auto chunk_files = generate_chunk_files_(input_file);
-        auto t2 = Clock::now();
-        std::cout << "Done: Created " << chunk_files.size() << " chunk files." << std::endl;
-        std::chrono::duration<double> chunking_time = t2 - t1;
-        std::cout << "[TIMING] Chunking time: " << chunking_time.count() << " s" << std::endl;
+        double t1, t2;
 
-        t1 = Clock::now();
+        // Chunking
+        t1 = omp_get_wtime();
+        auto chunk_files = generate_chunk_files_(input_file);
+        t2 = omp_get_wtime();
+        std::cout << "Done: Created " << chunk_files.size() << " chunk files." << std::endl;
+        std::cout << "[TIMING] Chunking time: " << (t2 - t1) << " s" << std::endl;
+
+        // Sorting
+        t1 = omp_get_wtime();
         if (!parallel_sort_chunks(chunk_files)) {
             std::cerr << "Failed to create sorted runs" << std::endl;
             return false;
         }
-        t2 = Clock::now();
-        std::chrono::duration<double> sorting_time = t2 - t1;
-        std::cout << "[TIMING] Sorting time: " << sorting_time.count() << " s" << std::endl;
+        t2 = omp_get_wtime();
+        std::cout << "[TIMING] Sorting time: " << (t2 - t1) << " s" << std::endl;
 
-        t1 = Clock::now();
+        // Merging
+        t1 = omp_get_wtime();
         if (!merge_sorted_files(temp_files_, output_file)) {
             std::cerr << "Failed to merge sorted runs" << std::endl;
             return false;
         }
-        t2 = Clock::now();
-        std::chrono::duration<double> merging_time = t2 - t1;
-        std::cout << "[TIMING] Merging time: " << merging_time.count() << " s" << std::endl;
+        t2 = omp_get_wtime();
+        std::cout << "[TIMING] Merging time: " << (t2 - t1) << " s" << std::endl;
 
-        double total_time = chunking_time.count() + sorting_time.count() + merging_time.count();
+        double total_time = (t2 - omp_get_wtime()) + (t2 - t1);  // or recalculate if needed
         std::cout << "[TIMING] Total time: " << total_time << " s" << std::endl;
-        
-        t1 = Clock::now();
+
+        // Cleanup
+        t1 = omp_get_wtime();
         cleanup_temp_files();
-        t2 = Clock::now();
-        std::chrono::duration<double> cleanup_time = t2 - t1;
-        std::cout << "[TIMING] Cleanup temp files time: " << cleanup_time.count() << " s" << std::endl;
-        
+        t2 = omp_get_wtime();
+        std::cout << "[TIMING] Cleanup temp files time: " << (t2 - t1) << " s" << std::endl;
+
         return true;
     }
     
