@@ -29,6 +29,7 @@ class OpenMPExternalMergeSort {
 private:
     size_t memory_budget_;          // Maximum memory to use (bytes)
     size_t num_threads_;            // Number of OpenMP threads
+    size_t max_memory_per_thread_;  // Maximum memory per thread
     std::string temp_dir_;          // Directory for temporary files
     std::vector<std::string> temp_files_; // List of temporary files created
     
@@ -44,6 +45,8 @@ public:
         // set number of threads
         num_threads_ = (num_threads == 0) ? omp_get_max_threads() : num_threads;
         omp_set_num_threads(num_threads_);
+
+        max_memory_per_thread_ = memory_budget_ / num_threads_;
 
         // confirm
         // int max_threads = omp_get_max_threads();
@@ -225,11 +228,11 @@ std::vector<ChunkMeta> compute_logical_chunks(const std::string& input_path) {
 
 inline size_t compute_est_chunk_size(const std::string& input_path) {
     size_t input_size = std::filesystem::file_size(input_path);
-    // Max memory one thread can use
-    size_t max_chunk_size = memory_budget_ / num_threads_;
+    // Apply 80% safety margin on max memory per thread
+    size_t safe_max_memory_per_thread = static_cast<size_t>(max_memory_per_thread_ * 0.8);
     // min chunks needed to divide the input file so no chunk exceeds max_chunk_size
     // ps: this is just ceiling division, but manual because we want to round up instead of down (default fun)
-    size_t min_chunks_needed = (input_size + max_chunk_size - 1) / max_chunk_size;
+    size_t min_chunks_needed = (input_size + safe_max_memory_per_thread - 1) / safe_max_memory_per_thread;
     // ensure at least one chunk per thread
     size_t actual_chunk_count = std::max(min_chunks_needed, static_cast<size_t>(num_threads_));
     // final chunk size = total size divided by number of chunks
@@ -332,7 +335,6 @@ std::vector<std::string> generate_chunk_files_(const std::string& input_file) {
         //     std::cout << "Thread " << thread_id << " starting chunk " << chunk_file << std::endl;
         // }
 
-
         std::vector<Record> records;
         
         // Open the chunk file
@@ -343,8 +345,7 @@ std::vector<std::string> generate_chunk_files_(const std::string& input_file) {
         }
 
         // Initialize variables to track the number of bytes read and the memory usage
-        // size_t bytes_read = 0;
-        // size_t memory_limit_per_thread = memory_budget_ / num_threads_;
+        size_t bytes_read = 0;
         
         // Read all records from the chunk file
         while (input.good()) {
@@ -353,18 +354,19 @@ std::vector<std::string> generate_chunk_files_(const std::string& input_file) {
             if (!record.read_from_stream(input)) break;
             
             // Update the number of bytes read and the memory usage
-            // bytes_read += record.total_size();
+            bytes_read += record.total_size();
             
             // Check if the memory usage exceeds the limit per thread
-            // if (bytes_read > memory_limit_per_thread) {
-            //     static bool warned = false;
-            //     if (!warned) {
-            //         std::cerr << "Warning: Thread " << thread_id << " exceeded memory budget (" 
-            //                 << bytes_read << " > " << memory_limit_per_thread << " bytes)" << std::endl;
-            //         warned = true;
-            //     }
-            //     // Do NOT break — continue reading the full chunk
-            // }
+            if (bytes_read > max_memory_per_thread_) {
+                static bool warned = false;
+                if (!warned) {
+                    std::cerr << "Warning: Thread " << thread_id << " exceeded memory budget (" 
+                            << bytes_read << " > " << max_memory_per_thread_ << " bytes)" << std::endl;
+                    warned = true;
+                }
+                break;
+                // for debug: Do NOT break — continue reading the full chunk
+            }
             
             // Add the record to the vector of records
             records.push_back(std::move(record));

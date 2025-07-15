@@ -101,6 +101,9 @@ private:
         uint64_t chunk_start = 0;
         size_t curr_chunk_size = 0;
 
+        // compute est chunk size (80% of memory budget, just to be safe)
+        size_t estimated_chunk_size = memory_budget_ * 0.8;
+
         while (input.peek() != EOF) {
             std::streampos record_start = input.tellg();
 
@@ -127,7 +130,7 @@ private:
             curr_offset = static_cast<uint64_t>(input.tellg());
             curr_chunk_size += rec_size;
 
-            if (curr_chunk_size > memory_budget_) {
+            if (curr_chunk_size > estimated_chunk_size) {
                 logical_chunks.push_back({
                     .start_offset = chunk_start,
                     .end_offset = static_cast<uint64_t>(record_start),
