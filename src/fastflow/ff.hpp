@@ -227,39 +227,49 @@ public:
             record.write_to_stream(output_file);
         }
 
-        // Optional: clean up the task if no longer needed
-        // delete task;
-
         return chunk_task;  // Return to collector
     }
 };
 
+// ------------------------
+// FastFlow Node: Chunk Collector
+// ------------------------
+// Collect sorted chunk files and merge them
 class ChunkCollector : public ff_node {
 private:
-    std::vector<std::string> runs_;
-    std::string final_out_;
+    std::vector<std::string> sorted_chunk_paths_;
+    std::string final_output_path_;
 
 public:
-    ChunkCollector(const std::string& final_out): final_out_(final_out){}
+    explicit ChunkCollector(const std::string& output_path)
+        : final_output_path_(output_path) {}
 
-    void* svc(void* tk) override {
-        auto *task = static_cast<ChunkTask*>(tk);
-        runs_.push_back(task->output_path);
-        delete tk;
+    /**
+     * Called each time a worker sends output
+     * It collects paths to the sorted chunk files to merge them later
+     */
+    void* svc(void* task_ptr) override {
+        auto* chunk_task = static_cast<ChunkTask*>(task_ptr);
+        
+        // Save the path to this chunk’s sorted file
+        sorted_chunk_paths_.push_back(chunk_task->output_path);
+        
+        // Clean up the memory used by the task
+        delete chunk_task;
+
+        // Continue processing more tasks
         return GO_ON;
     }
 
+    /**
+     * Called after all chunk tasks have been processed by workers
+     * Launches the final merge of all sorted chunk files
+     */
     void svc_end() override {
-        if (!runs_.empty()) {
-            merge_sorted_files(runs_, final_out_);
+        if (!sorted_chunk_paths_.empty()) {
+            merge_sorted_files(sorted_chunk_paths_, final_output_path_);
         }
     }
-
-    // void on_end() {
-    //     if (!runs_.empty()) {
-    //         merge_sorted_files(runs_, final_out_);
-    //     }
-    // }
 };
 
 // ------------------------
