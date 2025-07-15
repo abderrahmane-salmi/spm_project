@@ -72,14 +72,16 @@ public:
     bool sort_file(const std::string& input_file, const std::string& output_file) {
         using Clock = std::chrono::high_resolution_clock;
 
+        auto file_size_bytes = std::filesystem::file_size(input_file);
+        double file_size_mb = static_cast<double>(file_size_bytes) / (1024 * 1024);
         std::cout << "Starting OpenMP external merge sort..." << std::endl;
-        std::cout << "Input: " << input_file << std::endl;
+        std::cout << "Input: " << input_file << " (" << file_size_mb << " MB)" << std::endl;
         std::cout << "Output: " << output_file << std::endl;
 
         auto t1 = Clock::now();
-        auto chunk_files = generate_chunk_files2(input_file);
+        auto chunk_files = generate_chunk_files_(input_file);
         auto t2 = Clock::now();
-        std::cout << "Phase 1: Created " << chunk_files.size() << " chunk files." << std::endl;
+        std::cout << "Done: Created " << chunk_files.size() << " chunk files." << std::endl;
         std::chrono::duration<double> chunking_time = t2 - t1;
         std::cout << "[TIMING] Chunking time: " << chunking_time.count() << " s" << std::endl;
 
@@ -151,7 +153,9 @@ std::vector<ChunkMeta> compute_logical_chunks(const std::string& input_path) {
     map_input_file(input_path); // Memory-map the input file for fast access
 
     std::vector<ChunkMeta> logical_chunks;
-    size_t estimated_chunk_size = compute_optimal_chunk_size2(input_path);
+    size_t estimated_chunk_size = compute_est_chunk_size(input_path);
+
+    // std::cout << "Estimated chunk size: " << (estimated_chunk_size /= (1024*1024)) << " MB" << std::endl;
 
     uint64_t curr_offset = 0;
     uint64_t chunk_start = 0;
@@ -215,14 +219,11 @@ std::vector<ChunkMeta> compute_logical_chunks(const std::string& input_path) {
         });
     }
 
-    std::cout << "[INFO] Generated " << logical_chunks.size() << " chunk"
-              << (logical_chunks.size() == 1 ? "" : "s") << " using record-aware mmap.\n";
-
     unmap_input_file();
     return logical_chunks;
 }
 
-inline size_t compute_optimal_chunk_size2(const std::string& input_path) {
+inline size_t compute_est_chunk_size(const std::string& input_path) {
     size_t input_size = std::filesystem::file_size(input_path);
     // Max memory one thread can use
     size_t max_chunk_size = memory_budget_ / num_threads_;
@@ -236,19 +237,19 @@ inline size_t compute_optimal_chunk_size2(const std::string& input_path) {
     return estimated_chunk_size;
 }
 
-std::vector<std::string> generate_chunk_files2(const std::string& input_file) {
+std::vector<std::string> generate_chunk_files_(const std::string& input_file) {
         // get logical chunks
-        auto chunks = compute_logical_chunks(input_file);
-        if (chunks.size() == 1) return {input_file};
+        auto logical_chunks = compute_logical_chunks(input_file);
+        if (logical_chunks.size() == 1) return {input_file};
 
         // Map file again for chunk extraction
         map_input_file(input_file);
-        std::vector<std::string> chunk_files(chunks.size());
+        std::vector<std::string> chunk_files(logical_chunks.size());
 
         // Parallel write using OpenMP
         #pragma omp parallel for schedule(static)
-        for (int i = 0; i < (int)chunks.size(); ++i) {
-            const auto& curr_chunk = chunks[i];
+        for (int i = 0; i < (int)logical_chunks.size(); ++i) {
+            const auto& curr_chunk = logical_chunks[i];
             std::string output_file = temp_dir_ + "/chunk_" + std::to_string(i) + ".bin";
             std::ofstream out{output_file, std::ios::binary};
             // Write chunk data directly from mmap buffer
