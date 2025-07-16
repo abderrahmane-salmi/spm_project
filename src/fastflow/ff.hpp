@@ -208,7 +208,7 @@ public:
 
             // Stop if this chunk exceeds the per-worker memory budget
             if (total_bytes_read > memory_budget_per_worker_) {
-                std::cerr << "[warn] Worker for chunk " << chunk_task->chunk_id
+                std::cerr << "[warning] Worker for chunk " << chunk_task->chunk_id
                           << " exceeded its memory budget\n";
                 break;
             }
@@ -302,9 +302,12 @@ public:
      * 3. Merge sorted chunks into a final output file (ChunkCollector)
      */
     double sort_file(const std::string& input_file, const std::string& output_file) {
-        using Clock = std::chrono::high_resolution_clock;
+        auto file_size_bytes = std::filesystem::file_size(input_file);
+        double file_size_mb = static_cast<double>(file_size_bytes) / (1024 * 1024);
 
         std::cout << "FastFlow External MergeSort starting..." << std::endl;
+        std::cout << "Input: " << input_file << " (" << file_size_mb << " MB)" << std::endl;
+        std::cout << "Output: " << output_file << std::endl;
         std::cout << "Memory budget: " << (memory_budget / 1024 / 1024) << " MB" << std::endl;
         std::cout << "Workers: " << num_workers << std::endl;
 
@@ -327,7 +330,6 @@ public:
         farm.add_collector(&collector);
 
         // Run farm
-        auto t1 = Clock::now();
         if (farm.run_and_wait_end() < 0) {
             std::cerr << "FastFlow farm execution failed!" << std::endl;
             return;
