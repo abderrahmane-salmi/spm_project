@@ -301,7 +301,7 @@ public:
      * 2. Sort chunks in parallel (ChunkWorker)
      * 3. Merge sorted chunks into a final output file (ChunkCollector)
      */
-    void sort_file(const std::string& input_file, const std::string& output_file) {
+    double sort_file(const std::string& input_file, const std::string& output_file) {
         using Clock = std::chrono::high_resolution_clock;
 
         std::cout << "FastFlow External MergeSort starting..." << std::endl;
@@ -337,6 +337,8 @@ public:
         std::cout << "[TIMING] Total sorting + merging time: " << (elapsed_ms / 1000.0) << " s" << std::endl;
 
         cleanup_temp_files();
+
+        return elapsed_ms;
     }
 
 

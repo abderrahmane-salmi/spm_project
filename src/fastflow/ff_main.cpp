@@ -45,7 +45,7 @@ int main(int argc, char* argv[]) {
             return 1;
         }
 
-        size_t memory_mb = (argc >= 4) ? std::stoul(argv[3]) : 256;
+        size_t memory_mb = (argc >= 4) ? std::stoul(argv[3]) : 20000;
         size_t memory_bytes = memory_mb * 1024 * 1024;
         int workers = (argc >= 5) ? std::stoi(argv[4]) : 4;
 
@@ -72,7 +72,7 @@ int main(int argc, char* argv[]) {
         std::cout << "Verification: " << (sorted ? "PASS" : "FAIL") << std::endl;
 
         // this line deletes the output file, use it only when needed
-        // if (std::filesystem::exists(output_file)) std::filesystem::remove(output_file);
+        if (std::filesystem::exists(output_file)) std::filesystem::remove(output_file);
     } else if (command == "benchmark") {
         std::string input_file = argv[2];
         if (!fs::exists(input_file)) {
@@ -89,15 +89,10 @@ int main(int argc, char* argv[]) {
 
         FastFlowExternalMergeSort sorter(memory_bytes, workers);
 
-        auto start = std::chrono::high_resolution_clock::now();
-        sorter.sort_file(input_file, output_file);
-        auto end = std::chrono::high_resolution_clock::now();
-
-        double duration = std::chrono::duration<double>(end - start).count();
+        double duration =  sorter.sort_file(input_file, output_file);
 
         if (fs::exists(output_file)) fs::remove(output_file);
 
-        // Output only performance data (compatible with bash parsing)
         std::cout << "[FF] File=" << input_file
                 << " Workers=" << workers
                 << " Memory=" << memory_mb
