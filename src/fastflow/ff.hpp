@@ -332,7 +332,7 @@ public:
         // Run farm
         if (farm.run_and_wait_end() < 0) {
             std::cerr << "FastFlow farm execution failed!" << std::endl;
-            return;
+            return -1.0;
         }
 
         double elapsed_ms = ff::ffTime(ff::STOP_TIME);
