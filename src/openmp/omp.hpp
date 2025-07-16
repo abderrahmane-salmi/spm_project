@@ -83,8 +83,9 @@ public:
         t1 = omp_get_wtime();
         auto chunk_files = generate_chunk_files_(input_file);
         t2 = omp_get_wtime();
+        double chunk_time = (t2 - t1);
         std::cout << "Done: Created " << chunk_files.size() << " chunk files." << std::endl;
-        std::cout << "[TIMING] Chunking time: " << (t2 - t1) << " s" << std::endl;
+        std::cout << "[TIMING] Chunking time: " << chunk_time << " s" << std::endl;
 
         // Sorting
         t1 = omp_get_wtime();
@@ -93,7 +94,8 @@ public:
             return false;
         }
         t2 = omp_get_wtime();
-        std::cout << "[TIMING] Sorting time: " << (t2 - t1) << " s" << std::endl;
+        double sort_time = (t2 - t1);
+        std::cout << "[TIMING] Sorting time: " << sort_time << " s" << std::endl;
 
         // Merging
         t1 = omp_get_wtime();
@@ -102,16 +104,18 @@ public:
             return false;
         }
         t2 = omp_get_wtime();
-        std::cout << "[TIMING] Merging time: " << (t2 - t1) << " s" << std::endl;
+        double merge_time = (t2 - t1);
+        std::cout << "[TIMING] Merging time: " << merge_time << " s" << std::endl;
 
-        double total_time = (t2 - omp_get_wtime()) + (t2 - t1); 
+        double total_time = chunk_time + sort_time + merge_time; 
         std::cout << "[TIMING] Total time: " << total_time << " s" << std::endl;
 
         // Cleanup
         t1 = omp_get_wtime();
         cleanup_temp_files();
         t2 = omp_get_wtime();
-        std::cout << "[TIMING] Cleanup temp files time: " << (t2 - t1) << " s" << std::endl;
+        double cleanup_time = (t2 - t1);
+        std::cout << "[TIMING] Cleanup temp files time: " << cleanup_time << " s" << std::endl;
 
         return total_time;
     }
