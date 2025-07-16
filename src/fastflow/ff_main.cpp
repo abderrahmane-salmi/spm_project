@@ -96,7 +96,7 @@ int main(int argc, char* argv[]) {
         std::cout << "[FF] File=" << input_file
                 << " Workers=" << workers
                 << " Memory=" << memory_mb
-                << " Time=" << duration << std::endl;
+                << " Time=" << (duration / 1000.0) << std::endl;
     } 
     else {
         std::cerr << "Unknown command: " << command << std::endl;

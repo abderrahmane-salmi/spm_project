@@ -338,7 +338,10 @@ public:
         double elapsed_ms = ff::ffTime(ff::STOP_TIME);
         std::cout << "[TIMING] Total sorting + merging time: " << (elapsed_ms / 1000.0) << " s" << std::endl;
 
+        ff::ffTime(ff::START_TIME);
         cleanup_temp_files();
+        double cleanup_time = ff::ffTime(ff::STOP_TIME);
+        std::cout << "[TIMING] Cleanup time: " << (cleanup_time / 1000.0) << " s" << std::endl;
 
         return elapsed_ms;
     }
