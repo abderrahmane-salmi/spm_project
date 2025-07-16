@@ -67,7 +67,7 @@ public:
         cleanup_temp_files(); // Clean up all generated temp files
     }
 
-    bool sort_file(const std::string& input_file, const std::string& output_file) {
+    double sort_file(const std::string& input_file, const std::string& output_file) {
         auto file_size_bytes = std::filesystem::file_size(input_file);
         double file_size_mb = static_cast<double>(file_size_bytes) / (1024 * 1024);
 
@@ -104,7 +104,7 @@ public:
         t2 = omp_get_wtime();
         std::cout << "[TIMING] Merging time: " << (t2 - t1) << " s" << std::endl;
 
-        double total_time = (t2 - omp_get_wtime()) + (t2 - t1);  // or recalculate if needed
+        double total_time = (t2 - omp_get_wtime()) + (t2 - t1); 
         std::cout << "[TIMING] Total time: " << total_time << " s" << std::endl;
 
         // Cleanup
@@ -113,7 +113,7 @@ public:
         t2 = omp_get_wtime();
         std::cout << "[TIMING] Cleanup temp files time: " << (t2 - t1) << " s" << std::endl;
 
-        return true;
+        return total_time;
     }
     
 private:

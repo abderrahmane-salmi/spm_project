@@ -78,10 +78,10 @@ int main(int argc, char* argv[]) {
         }
 
         // this line deletes the output file, use it only when needed
-        // if (std::filesystem::exists(output_file)) std::filesystem::remove(output_file);
+        if (std::filesystem::exists(output_file)) std::filesystem::remove(output_file);
     }
     else if (command == "benchmark") {
-        size_t memory_mb = (argc >= 4) ? std::stoul(argv[3]) : 256;
+        size_t memory_mb = (argc >= 4) ? std::stoul(argv[3]) : 20000;
         size_t memory_bytes = memory_mb * 1024 * 1024;
         int threads = (argc >= 5) ? std::stoi(argv[4]) : 4;
 
@@ -90,11 +90,7 @@ int main(int argc, char* argv[]) {
 
         OpenMPExternalMergeSort sorter(memory_bytes, threads);
 
-        auto start = std::chrono::high_resolution_clock::now();
-        bool success = sorter.sort_file(input_file, output_file);
-        auto end = std::chrono::high_resolution_clock::now();
-
-        double duration = std::chrono::duration<double>(end - start).count();
+        double duration = sorter.sort_file(input_file, output_file);
 
         // Optionally: remove output file to keep disk clean
         if (std::filesystem::exists(output_file)) std::filesystem::remove(output_file);
@@ -104,8 +100,6 @@ int main(int argc, char* argv[]) {
                   << " Threads=" << threads
                   << " Memory=" << memory_mb
                   << " Time=" << duration << std::endl;
-
-        // std::cout << threads << "," << duration << std::endl;
     }
     else {
         std::cerr << "Unknown command: " << command << "\n";
