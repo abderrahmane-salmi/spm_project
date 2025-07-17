@@ -55,7 +55,7 @@ int main(int argc, char* argv[]) {
             size_t memory_budget = memory_budget_mb * 1024 * 1024;
             int num_threads = (argc >= 5) ? std::stoi(argv[4]) : 4;
 
-            omp_set_num_threads(num_threads);
+            // omp_set_num_threads(num_threads);
 
             if (rank == 0) {
                 std::cout << "Starting MPI MergeSort..." << std::endl;
@@ -66,7 +66,7 @@ int main(int argc, char* argv[]) {
                 std::cout << "OpenMP threads per rank: " << num_threads << std::endl;
             }
 
-            mpi_sort_file(input_file, output_file, memory_budget, "temp_mpi");
+            // mpi_sort_file(input_file, output_file, memory_budget, "temp_mpi", num_threads);
 
         } else if (command == "benchmark") {
             if (argc < 3) {
@@ -86,10 +86,12 @@ int main(int argc, char* argv[]) {
             size_t memory_budget = memory_budget_mb * 1024 * 1024;
             int num_threads = (argc >= 5) ? std::stoi(argv[4]) : 4;
 
-            omp_set_num_threads(num_threads);
+            // omp_set_num_threads(num_threads);
 
             auto start = std::chrono::high_resolution_clock::now();
-            mpi_sort_file(input_file, output_file, memory_budget, "temp_mpi");
+            // mpi_sort_file(input_file, output_file, memory_budget, "temp_mpi", num_threads);
+            MPIMergeSort sorter(rank, size, num_threads, memory_budget, "temp_mpi");
+            sorter.sort_file(input_file, output_file);
             auto end = std::chrono::high_resolution_clock::now();
             double duration = std::chrono::duration<double>(end - start).count();
 
