@@ -104,10 +104,12 @@ private:
 
     // Compute logical chunks based on memory constraints
     std::vector<ChunkMeta> compute_logical_chunks(const std::string& input_path) {
+        std::cout << "[LOG] Computing logical chunks for " << input_path << "\n";
         map_input_file(input_path);
 
         std::vector<ChunkMeta> logical_chunks;
         size_t estimated_chunk_size = compute_estimated_chunk_size(input_path);
+        std::cout << "[LOG] Estimated chunk size: " << estimated_chunk_size << " bytes\n";
         uint64_t curr_offset = 0;
         uint64_t chunk_start = 0;
         size_t curr_chunk_size = 0;
@@ -193,6 +195,7 @@ private:
 
     // Generate physical chunk files from logical chunks
     std::vector<std::string> generate_chunk_files(const std::string& input_file) {
+        std::cout << "[LOG] Generating chunk files from input file " << input_file << "\n";
         auto logical_chunks = compute_logical_chunks(input_file);
         
         if (logical_chunks.size() == 1) {
@@ -216,6 +219,8 @@ private:
             // Write chunk data directly from mmap buffer
             out.write(reinterpret_cast<char*>(mapped_data_ + curr_chunk.start_offset), curr_chunk.size);
             chunk_files[i] = output_file;
+            std::cout << "[LOG] Created chunk file: " << output_file 
+                      << " (" << curr_chunk.size << " bytes)" << std::endl;
         }
 
         unmap_input_file();
@@ -243,6 +248,8 @@ private:
             // Assign chunks to this worker
             while (chunk_idx < chunk_files.size()) {
                 worker_chunks.push_back(chunk_files[chunk_idx]);
+                std::cout << "[LOG] Coordinator: Assigning chunk " << chunk_files[chunk_idx]
+                          << " to worker " << worker << "\n";
                 chunk_idx++;
                 
                 // Move to next worker if we want to distribute evenly
@@ -265,6 +272,8 @@ private:
         for (int worker = 1; worker < size_; ++worker) {
             int num_sorted_files;
             MPI_Recv(&num_sorted_files, 1, MPI_INT, worker, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+             std::cout << "[LOG] Coordinator: Receiving " << num_sorted_files << " sorted files from worker "
+                      << worker << std::endl;
             
             for (int i = 0; i < num_sorted_files; ++i) {
                 int path_len;
@@ -273,7 +282,7 @@ private:
                 std::vector<char> path_buffer(path_len + 1);
                 MPI_Recv(path_buffer.data(), path_len, MPI_CHAR, worker, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
                 path_buffer[path_len] = '\0';
-                
+                std::cout << "[LOG] Coordinator: Received sorted file path: " << path_buffer.data() << std::endl;
                 sorted_files.push_back(std::string(path_buffer.data()));
             }
         }
@@ -281,6 +290,7 @@ private:
         std::cout << "Coordinator: Received " << sorted_files.size() << " sorted files\n";
 
         // Merge all sorted files into final output
+        std::cout << "[LOG] Coordinator: Merging " << sorted_files.size() << " sorted files into " << output_file << std::endl;
         merge_sorted_files(sorted_files, output_file);
         
         // Cleanup temporary files
@@ -311,6 +321,7 @@ private:
             MPI_Recv(path_buffer.data(), path_len, MPI_CHAR, 0, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
             path_buffer[path_len] = '\0';
             
+            std::cout << "[LOG] Worker " << rank_ << ": Received chunk file path: " << chunk_files[i] << std::endl;
             chunk_files[i] = std::string(path_buffer.data());
         }
 
@@ -319,7 +330,9 @@ private:
         // Process each chunk with FastFlow
         std::vector<std::string> sorted_files;
         for (const auto& chunk_file : chunk_files) {
+            std::cout << "[LOG] Worker " << rank_ << ": Processing chunk file: " << chunk_file << std::endl;
             std::string sorted_file = process_chunk_with_fastflow(chunk_file);
+            std::cout << "[LOG] Worker " << rank_ << ": Finished sorting chunk, produced sorted file: " << sorted_file << std::endl;
             sorted_files.push_back(sorted_file);
         }
 
@@ -332,6 +345,7 @@ private:
             int path_len = sorted_file.length();
             MPI_Send(&path_len, 1, MPI_INT, 0, 0, MPI_COMM_WORLD);
             MPI_Send(sorted_file.c_str(), path_len, MPI_CHAR, 0, 0, MPI_COMM_WORLD);
+            std::cout << "[LOG] Worker " << rank_ << ": Sent sorted file path: " << sorted_file << std::endl;
         }
 
         std::cout << "Worker " << rank_ << ": Completed processing\n";
@@ -339,17 +353,26 @@ private:
 
     // Process a single chunk using FastFlow
     std::string process_chunk_with_fastflow(const std::string& chunk_file) {
+        
         std::string sorted_file = temp_dir_ + "/sorted_" + std::to_string(rank_) + "_" + 
                               std::to_string(std::hash<std::string>{}(chunk_file)) + ".bin";
+        std::cout << "[LOG] Worker " << rank_ << ": Starting FastFlow sort for " << chunk_file
+                  << ", output: " << sorted_file << std::endl;
         FastFlowExternalMergeSort sorter(memory_budget, num_workers);
         sorter.sort_file(chunk_file, sorted_file);
+         std::cout << "[LOG] Worker " << rank_ << ": Completed FastFlow sort for " << chunk_file << std::endl;
         return sorted_file;
     }
 
     // Cleanup temporary files
     void cleanup_temp_files(const std::vector<std::string>& files) {
         for (const auto& file : files) {
-            std::filesystem::remove(file);
+             if (std::filesystem::exists(file)) {
+                std::cout << "[LOG] Cleaning up temp file: " << file << std::endl;
+                std::filesystem::remove(file);
+            } else {
+                std::cout << "[LOG] Temp file not found for cleanup: " << file << std::endl;
+            }
         }
     }
 };
