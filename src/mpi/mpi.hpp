@@ -352,13 +352,17 @@ private:
     // Process a single chunk using FastFlow
     std::string process_chunk_with_fastflow(const std::string& chunk_file) {
         
-        std::string sorted_file = temp_dir_ + "/sorted_" + std::to_string(rank_) + "_" + 
-                              std::to_string(std::hash<std::string>{}(chunk_file)) + ".bin";
+        // Generate sorted output file (chunk_1.bin -> chunk_1_ff_sorted.bin)
+        std::filesystem::path input_path(chunk_file);
+        std::string sorted_file = input_path.parent_path().string() + "/" + input_path.stem().string() + "_ff_sorted.bin";
+
         std::cout << "[LOG] Worker " << rank_ << ": Starting FastFlow sort for " << chunk_file
                   << ", output: " << sorted_file << std::endl;
+        
         FastFlowExternalMergeSort sorter(memory_budget, num_workers);
         sorter.sort_file(chunk_file, sorted_file);
-         std::cout << "[LOG] Worker " << rank_ << ": Completed FastFlow sort for " << chunk_file << std::endl;
+        
+        std::cout << "[LOG] Worker " << rank_ << ": Completed FastFlow sort for " << chunk_file << std::endl;
         return sorted_file;
     }
 
