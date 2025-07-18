@@ -1,36 +1,27 @@
 #ifndef MPI_MERGE_SORT_HPP
 #define MPI_MERGE_SORT_HPP
 
+#include <mpi.h>
 #include <iostream>
 #include <fstream>
 #include <algorithm>
 #include <chrono>
 #include <filesystem>
 #include <cstring>
-#include <mpi.h>
+#include <vector>
+#include <string>
+#include <sys/mman.h>
+#include <sys/stat.h>
+#include <fcntl.h>
+#include <unistd.h>
+#include <memory>
+#include <sstream>
 
 #include "../include/record.hpp"
 #include "../chunking/chunking.hpp"
 #include "../merging/merging.hpp"
 #include "../openmp/omp.hpp"
 #include "../fastflow/ff.hpp"
-
-#include <mpi.h>
-#include <iostream>
-#include <vector>
-#include <string>
-#include <fstream>
-#include <filesystem>
-#include <algorithm>
-#include <sys/mman.h>
-#include <sys/stat.h>
-#include <fcntl.h>
-#include <unistd.h>
-#include <cstring>
-#include <memory>
-#include <sstream>
-
-const double MEMORY_SAFETY_MARGIN = 0.8; // Use 80% of memory budget just to be safe
 
 struct ChunkMeta {
     uint64_t start_offset;
@@ -349,16 +340,9 @@ private:
     // Process a single chunk using FastFlow
     std::string process_chunk_with_fastflow(const std::string& chunk_file) {
         std::string sorted_file = temp_dir_ + "/sorted_" + std::to_string(rank_) + "_" + 
-                                  std::to_string(std::hash<std::string>{}(chunk_file)) + ".bin";
-        
-        // Here you would call your FastFlow sorter
-        // For now, I'll implement a simple sort as placeholder
-        // Replace this with: fastflow_sorter.sort(chunk_file, sorted_file);
-
+                              std::to_string(std::hash<std::string>{}(chunk_file)) + ".bin";
         FastFlowExternalMergeSort sorter(memory_budget, num_workers);
-        std::string sorted_out = chunk_file + "_sorted.bin";
-        sorter.sort_file(chunk_file, sorted_out);
-        
+        sorter.sort_file(chunk_file, sorted_file);
         return sorted_file;
     }
 
@@ -369,44 +353,5 @@ private:
         }
     }
 };
-
-// // Main function
-// int main(int argc, char* argv[]) {
-//     MPI_Init(&argc, &argv);
-    
-//     int rank, size;
-//     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-//     MPI_Comm_size(MPI_COMM_WORLD, &size);
-    
-//     if (size < 2) {
-//         if (rank == 0) {
-//             std::cerr << "Error: Need at least 2 MPI processes (1 coordinator + 1 worker)\n";
-//         }
-//         MPI_Finalize();
-//         return 1;
-//     }
-    
-//     if (argc != 3) {
-//         if (rank == 0) {
-//             std::cerr << "Usage: " << argv[0] << " <input_file> <output_file>\n";
-//         }
-//         MPI_Finalize();
-//         return 1;
-//     }
-    
-//     std::string input_file = argv[1];
-//     std::string output_file = argv[2];
-    
-//     try {
-//         MPIMergeSort sorter(rank, size);
-//         sorter.sort(input_file, output_file);
-//     } catch (const std::exception& e) {
-//         std::cerr << "Error in rank " << rank << ": " << e.what() << "\n";
-//         MPI_Abort(MPI_COMM_WORLD, 1);
-//     }
-    
-//     MPI_Finalize();
-//     return 0;
-// }
 
 #endif // MPI_MERGE_SORT_HPP

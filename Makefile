@@ -60,7 +60,6 @@ $(FF_BIN): $(FF_DIR)/ff_main.cpp \
 # MPI build
 mpi: $(MPI_BIN)
 $(MPI_BIN): $(MPI_DIR)/mpi_main.cpp \
-            $(MPI_DIR)/mpi.cpp \
             $(INCLUDE_DIR)/record.hpp \
             src/filegen/filegen.cpp \
             src/chunking/chunking.cpp \
