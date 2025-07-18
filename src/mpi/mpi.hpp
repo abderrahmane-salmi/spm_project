@@ -242,25 +242,23 @@ private:
         size_t chunk_idx = 0;
         
         // Send chunks to workers in round-robin fashion
+        // Initialize worker chunk map
+        std::vector<std::vector<std::string>> worker_chunk_map(size_);
+
+        // Assign chunks in round-robin (excluding rank 0)
+        for (size_t i = 0; i < chunk_files.size(); ++i) {
+            int target_worker = 1 + (i % (size_ - 1));
+            worker_chunk_map[target_worker].push_back(chunk_files[i]);
+            std::cout << "[LOG] Coordinator: Assigning chunk " << chunk_files[i]
+                    << " to worker " << target_worker << "\n";
+        }
+
+        // Now send chunks to each worker
         for (int worker = 1; worker < size_; ++worker) {
-            std::vector<std::string> worker_chunks;
-            
-            // Assign chunks to this worker
-            while (chunk_idx < chunk_files.size()) {
-                worker_chunks.push_back(chunk_files[chunk_idx]);
-                std::cout << "[LOG] Coordinator: Assigning chunk " << chunk_files[chunk_idx]
-                          << " to worker " << worker << "\n";
-                chunk_idx++;
-                
-                // Move to next worker if we want to distribute evenly
-                if (chunk_idx % (size_ - 1) == 0) break;
-            }
-            
-            // Send number of chunks to worker
-            int num_chunks = worker_chunks.size();
+            const auto& worker_chunks = worker_chunk_map[worker];
+            int num_chunks = static_cast<int>(worker_chunks.size());
             MPI_Send(&num_chunks, 1, MPI_INT, worker, 0, MPI_COMM_WORLD);
-            
-            // Send each chunk file path
+
             for (const auto& chunk_file : worker_chunks) {
                 int path_len = chunk_file.length();
                 MPI_Send(&path_len, 1, MPI_INT, worker, 0, MPI_COMM_WORLD);
@@ -321,8 +319,8 @@ private:
             MPI_Recv(path_buffer.data(), path_len, MPI_CHAR, 0, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
             path_buffer[path_len] = '\0';
             
-            std::cout << "[LOG] Worker " << rank_ << ": Received chunk file path: " << chunk_files[i] << std::endl;
             chunk_files[i] = std::string(path_buffer.data());
+            std::cout << "[LOG] Worker " << rank_ << ": Received chunk file path: " << chunk_files[i] << std::endl;
         }
 
         std::cout << "Worker " << rank_ << ": Received " << num_chunks << " chunks to process\n";
