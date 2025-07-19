@@ -88,12 +88,12 @@ int main(int argc, char* argv[]) {
 
             // omp_set_num_threads(num_threads);
 
-            auto start = std::chrono::high_resolution_clock::now();
+            double start = MPI_Wtime();
             // mpi_sort_file(input_file, output_file, memory_budget, "temp_mpi", num_threads);
             MPIMergeSort sorter(rank, size, num_threads, memory_budget, "temp_mpi");
             sorter.sort_file(input_file, output_file);
-            auto end = std::chrono::high_resolution_clock::now();
-            double duration = std::chrono::duration<double>(end - start).count();
+            double end = MPI_Wtime();
+            double duration = end - start;
 
             if (rank == 0) {
                 // Optional cleanup
