@@ -59,10 +59,19 @@ public:
 
     // Main sort function
     void sort_file(const std::string& input_file, const std::string& output_file) {
-        if (rank_ == 0) {
-            run_coordinator(input_file, output_file);
+        if (size_ == 1) {
+            // Single-node mode — just use FastFlow directly
+            std::cout << "[LOG] Running single-node sort\n";
+            FastFlowExternalMergeSort sorter(memory_budget, num_workers);
+            sorter.sort_file(input_file, output_file);
+            std::cout << "[LOG] FastFlow sort completed\n";
         } else {
-            run_worker();
+            // Multi-node sort
+            if (rank_ == 0) {
+                run_coordinator(input_file, output_file);
+            } else {
+                run_worker();
+            }
         }
     }
 
