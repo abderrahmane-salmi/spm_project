@@ -1,0 +1,8 @@
+Filename,Threads,Memory(MB),Time(s)
+data/data_50M_p512.bin,1,10240,0
+data/data_50M_p512.bin,2,10240,120.787
+data/data_50M_p512.bin,4,10240,143.397
+data/data_50M_p512.bin,8,10240,104.17
+data/data_50M_p512.bin,16,10240,168.323
+data/data_50M_p512.bin,32,10240,466.124
+data/data_50M_p512.bin,64,10240,462.6

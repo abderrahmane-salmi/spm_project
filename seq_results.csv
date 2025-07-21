@@ -1,0 +1,5 @@
+Filename,Memory(MB),Time(s)
+data/data_10M_p64.bin,512,44.7748
+data/data_10M_p512.bin,2048,78.5549
+data/data_50M_p64.bin,1024,385.493
+data/data_50M_p512.bin,10240,1171.51

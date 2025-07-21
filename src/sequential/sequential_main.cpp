@@ -63,7 +63,9 @@ int main(int argc, char* argv[]) {
 
         if (ok) {
             std::cout << "Sort successful" << std::endl;
-            std::cout << "Time taken: " << dur << " seconds" << std::endl;
+            std::cout << "[SEQ] File=" << input_file
+                  << " Memory=" << memory_limit_mb
+                  << " Time=" << dur << std::endl;
         } else {
             std::cerr << "Sort failed!" << std::endl;
         }

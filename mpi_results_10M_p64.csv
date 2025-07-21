@@ -1,0 +1,17 @@
+Filename,MPI_Procs,Memory(MB),OMP_Threads,Time(s)
+data/data_10M_p64.bin,1,512,16,6.77645
+data/data_10M_p64.bin,1,512,8,11.4693
+data/data_10M_p64.bin,1,512,4,18.0654
+data/data_10M_p64.bin,1,512,1,27.4718
+data/data_10M_p64.bin,2,512,16,15.0769
+data/data_10M_p64.bin,2,512,8,14.1326
+data/data_10M_p64.bin,2,512,4,16.939
+data/data_10M_p64.bin,2,512,1,21.9136
+data/data_10M_p64.bin,4,512,16,12.4804
+data/data_10M_p64.bin,4,512,8,10.5174
+data/data_10M_p64.bin,4,512,4,11.9663
+data/data_10M_p64.bin,4,512,1,12.9847
+data/data_10M_p64.bin,8,512,16,12.7928
+data/data_10M_p64.bin,8,512,8,10.4392
+data/data_10M_p64.bin,8,512,4,13.4428
+data/data_10M_p64.bin,8,512,1,93.0982

@@ -5,7 +5,7 @@ cd "$SCRIPT_DIR/../../.."
 
 INPUT="data/data_50M_p512.bin"
 THREADS=(1 2 4 8 16 32 64)
-MEMORIES=(512 384 256 256 256)
+M=10240  # Memory in MB
 
 RESULTS_FILE="$SCRIPT_DIR/omp_results_50M_p512.csv"
 
@@ -13,7 +13,6 @@ echo "Filename,Threads,Memory(MB),Time(s)" > $RESULTS_FILE
 
 for i in "${!THREADS[@]}"; do
     T=${THREADS[$i]}
-    M=${MEMORIES[$i]}
 
     echo "Running OpenMP with $T threads and $M MB on $INPUT"
     export OMP_NUM_THREADS=$T

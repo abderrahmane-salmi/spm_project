@@ -1,0 +1,8 @@
+Filename,Workers,Memory(MB),Time(s)
+data/data_10M_p64.bin,1,512,12.7648
+data/data_10M_p64.bin,2,512,6.98639
+data/data_10M_p64.bin,4,512,5.24283
+data/data_10M_p64.bin,8,512,4.53449
+data/data_10M_p64.bin,16,512,4.91195
+data/data_10M_p64.bin,32,512,5.12634
+data/data_10M_p64.bin,64,512,5.36824

@@ -5,7 +5,7 @@ cd "$(dirname "$0")/../../.." # go to project root (for relative INPUT path)
 
 INPUT="data/data_10M_p512.bin"
 WORKERS=(1 2 4 8 16 32 64)
-MEMORIES=(256 128 96 96 48 64 64)  # Memory in MB, matched to WORKERS
+M=2048  # Memory in MB
 
 RESULTS_FILE="$SCRIPT_DIR/ff_results_10M_p512.csv"
 
@@ -13,7 +13,6 @@ echo "Filename,Workers,Memory(MB),Time(s)" > $RESULTS_FILE
 
 for i in "${!WORKERS[@]}"; do
     W=${WORKERS[$i]}
-    M=${MEMORIES[$i]}
 
     echo "Running FastFlow with $W workers and $M MB memory on $INPUT"
 
