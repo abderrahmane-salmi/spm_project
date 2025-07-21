@@ -1,6 +1,8 @@
-Filename,Workers,Time(s)
-data/data_50M_p64.bin,1,133.963
-data/data_50M_p64.bin,2,169.959
-data/data_50M_p64.bin,4,107.993
-data/data_50M_p64.bin,8,125.17
-data/data_50M_p64.bin,16,169.976
+Filename,Workers,Memory(MB),Time(s)
+data/data_50M_p64.bin,1,1024,126.611
+data/data_50M_p64.bin,2,1024,94.4452
+data/data_50M_p64.bin,4,1024,40.8751
+data/data_50M_p64.bin,8,1024,29.6146
+data/data_50M_p64.bin,16,1024,24.8425
+data/data_50M_p64.bin,32,1024,27.8663
+data/data_50M_p64.bin,64,1024,28.2874

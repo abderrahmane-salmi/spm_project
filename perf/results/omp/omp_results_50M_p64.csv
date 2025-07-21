@@ -1,6 +1,8 @@
-Filename,Threads,Time(s)
-data/data_50M_p64.bin,1,148.208
-data/data_50M_p64.bin,2,146.784
-data/data_50M_p64.bin,4,129.571
-data/data_50M_p64.bin,8,199.98
-data/data_50M_p64.bin,16,111.659
+Filename,Threads,Memory(MB),Time(s)
+data/data_50M_p64.bin,1,512,0
+data/data_50M_p64.bin,2,512,0
+data/data_50M_p64.bin,4,512,0
+data/data_50M_p64.bin,8,512,182.601
+data/data_50M_p64.bin,16,512,0
+data/data_50M_p64.bin,32,512,0
+data/data_50M_p64.bin,64,512,90.6067

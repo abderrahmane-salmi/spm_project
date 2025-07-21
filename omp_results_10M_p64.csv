@@ -1,8 +1,0 @@
-Filename,Threads,Memory(MB),Time(s)
-data/data_10M_p64.bin,1,512,19.3481
-data/data_10M_p64.bin,2,512,37.671
-data/data_10M_p64.bin,4,512,23.6288
-data/data_10M_p64.bin,8,512,15.8426
-data/data_10M_p64.bin,16,512,15.5251
-data/data_10M_p64.bin,32,512,14.9167
-data/data_10M_p64.bin,64,512,0

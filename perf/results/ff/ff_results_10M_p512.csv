@@ -1,6 +1,8 @@
-Filename,Workers,Time(s)
-data/data_10M_p512.bin,1,55.7266
-data/data_10M_p512.bin,2,37.6462
-data/data_10M_p512.bin,4,34.1421
-data/data_10M_p512.bin,8,33.5939
-data/data_10M_p512.bin,16,35.2438
+Filename,Workers,Memory(MB),Time(s)
+data/data_10M_p512.bin,1,2048,69.7561
+data/data_10M_p512.bin,2,2048,27.9945
+data/data_10M_p512.bin,4,2048,18.6089
+data/data_10M_p512.bin,8,2048,15.7289
+data/data_10M_p512.bin,16,2048,14.7253
+data/data_10M_p512.bin,32,2048,13.2739
+data/data_10M_p512.bin,64,2048,28.6809
