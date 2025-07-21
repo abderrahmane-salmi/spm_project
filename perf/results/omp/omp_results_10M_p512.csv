@@ -1,8 +1,8 @@
 Filename,Threads,Memory(MB),Time(s)
 data/data_10M_p512.bin,1,2048,89.5375
-data/data_10M_p512.bin,2,2048,33.1696
-data/data_10M_p512.bin,4,2048,65.99
-data/data_10M_p512.bin,8,2048,124.102
+data/data_10M_p512.bin,2,2048,70.037
+data/data_10M_p512.bin,4,2048,64.2043
+data/data_10M_p512.bin,8,2048,76.0594
 data/data_10M_p512.bin,16,2048,93.6691
 data/data_10M_p512.bin,32,2048,87.7721
 data/data_10M_p512.bin,64,2048,110.375
