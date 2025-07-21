@@ -1,4 +1,4 @@
-Filename,MPI_Procs,Memory(MB),OMP_Threads,Time(s)
+Filename,MPI_Procs,Memory(MB),FF_Threads,Time(s)
 data/data_10M_p512.bin,1,2048,16,64.5114
 data/data_10M_p512.bin,1,2048,8,26.4986
 data/data_10M_p512.bin,1,2048,4,33.3299

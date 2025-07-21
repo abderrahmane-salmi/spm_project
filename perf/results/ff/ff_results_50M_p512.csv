@@ -1,5 +1,5 @@
 Filename,Workers,Memory(MB),Time(s)
-data/data_50M_p512.bin,1,10240,357.279
+data/data_50M_p512.bin,1,10240,994.54
 data/data_50M_p512.bin,2,10240,404.188
 data/data_50M_p512.bin,4,10240,388.39
 data/data_50M_p512.bin,8,10240,212.45
